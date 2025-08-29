@@ -6,7 +6,7 @@
  */
 
 plugins {
-    kotlin("jvm") version "1.9.24"
+    kotlin("jvm") version "2.0.21"
 }
 
 group = "com.t0xodile"
@@ -25,12 +25,12 @@ dependencies {
 tasks.jar {
     manifest {
         attributes(
-            "Implementation-Title" to "t0xodile's Research Tool",
+            "Implementation-Title" to "http-stream-splitter",
             "Implementation-Version" to version,
-            "Burp-Extension-Name" to "t0xodile's Research Tool",
+            "Burp-Extension-Name" to "http-stream-splitter",
             "Burp-Extension-Version" to version,
-            "Burp-Extension-Suite-Min-Version" to "2023.10.0",
-            "Burp-Extension-Suite-Max-Version" to "2024.99.99"
+            "Burp-Extension-Suite-Min-Version" to "2024.10.0",
+            "Burp-Extension-Suite-Max-Version" to "2025.99.99"
         )
     }
 

@@ -12,15 +12,15 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
         internal val configSettings = SettingsBox()
     }
 
-    val name: String = "t0xodile's Research Tool"
+    val name: String = "http-stream-splitter"
     private val version = "0.01"
     var unloaded: Boolean = false
     val hostsToSkip: ConcurrentHashMap<String, Boolean> = BulkScan.hostsToSkip
-    private lateinit var taskEngine: ThreadPoolExecutor
 
     //Grab our MontoyaApi instance. You can reach this using Utilities.montoyaApi from now on.
     override fun initialize(api: MontoyaApi) {
         Utilities.montoyaApi = api
+        BulkUtilities.registerContextMenu()
     }
 
 
@@ -28,16 +28,13 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
 
         Utilities(callbacks, HashMap(), name)
 
-        //Custom settings that we want to add.
-        configSettings.register("Print Responses", false, "Prints the response to console.")
-
-
         callbacks.setExtensionName(name)
         BulkScanLauncher(BulkScan.scans)
         callbacks.registerExtensionStateListener(this);
 
         //Scans
-        BasicCheck("Basic Check")
+        ReqSplit("Request Splitting Scan")
+
 
 
         BulkUtilities.out("Loaded " + name + " v" + version);
@@ -47,8 +44,6 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
     override fun extensionUnloaded() {
         BulkUtilities.log("Aborting all attacks");
         BulkUtilities.unloaded.set(true);
-        taskEngine.queue.clear();
-        taskEngine.shutdown();
     }
 
 }
