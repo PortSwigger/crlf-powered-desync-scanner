@@ -6,7 +6,7 @@
  */
 
 plugins {
-    kotlin("jvm") version "2.0.21"
+    kotlin("jvm") version "2.1.21"
 }
 
 group = "com.t0xodile"

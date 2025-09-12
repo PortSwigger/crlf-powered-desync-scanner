@@ -64,6 +64,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
             hpMode = HttpMode.HTTP_1
         }
 
+        // for (permutation in permutations) {} //As per the PDS from http1mustdie...
         for (technique in enabledMutations) {
             if (Utilities.unloaded.get()) {
                 break
@@ -191,7 +192,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
             if (currentVariantAttributes.isNotEmpty()) {
 
                 //Check for known false positives...
-                if (Utilities.globalSettings.getBoolean("Filter Known FP") && (wafChecker.isWafResponse(probeRequestResponse.response(), technique) || wafChecker.isWafResponse(benignRequestResponse.response(), technique))) {
+                if (Utilities.globalSettings.getBoolean("Filter Known FP") && (wafChecker.isWafResponse(probeRequestResponse.response()) || wafChecker.isWafResponse(benignRequestResponse.response()))) {
                     continue
                 }
 
