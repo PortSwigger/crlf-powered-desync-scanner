@@ -43,6 +43,8 @@ class ReqMutator internal constructor() {
         mutations.register("expect-100", true, "")
         mutations.register("connection", true, "")
         mutations.register("max-forwardsTrace", true, "")
+        mutations.register("badHeaderName", true, "")
+        mutations.register("split", true, "")
 
         //Could dynamically register a mutation for litterally every header in param-miner...
         this::class.java.getResourceAsStream("/headers")?.bufferedReader()?.lines()?.forEach {
@@ -66,7 +68,7 @@ class ReqMutator internal constructor() {
         if (technique.startsWith("header|") && Utilities.globalSettings.getBoolean("Enable dodgy BPS diff")) {
             val headerName = technique.split("|")[1]
             val endOfheaderName = headerName.substring(1)
-            val encodedFirstChar = String.format("%%%02X", headerName[0]) //URL ENCODE the first byte
+            val encodedFirstChar = String.format("%%%02x", headerName[0].toByte()) //URL ENCODE the first byte
             payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a$encodedFirstChar${endOfheaderName.replaceFirst(headerName.get(0).toString(), "z")}:%20nottherightvalue%0d%0aX:%20x")
             payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a$encodedFirstChar$endOfheaderName:%20nottherightvalue%0d%0aX:%20x")
             payload.expectedResponseMatches = listOf() //Nothing expected... only works for Diffing...
@@ -107,7 +109,7 @@ class ReqMutator internal constructor() {
             "range-invalid" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%52znge:%20bytes=0-abcde%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%52ange:%20bytes=0-abcde%0d%0aX:%20x")
-                payload.expectedResponseMatches = listOf("206 Partial Content")
+                payload.expectedResponseMatches = listOf("416 Range Not Satisfiable")
             }
             "ifMatch" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49z-Match:%20%22this-etag-is-definitely-wrong%22%0d%0aX:%20x")
@@ -155,8 +157,8 @@ class ReqMutator internal constructor() {
                 payload.expectedResponseMatches = listOf("1337 No response headers received")
             }
             "clNoHost" -> {
-                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%48ost:%20" + baseRequest.httpService().host() + "%0d%0aContent-Length:%2012%0d%0a%0d%0ax=y")
-                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%48xst:%20" + baseRequest.httpService().host() + "%0d%0aContent-Length:%2012%0d%0a%0d%0ax=y")
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%48ost:%20" + baseRequest.httpService().host() + "%0d%0a%43ontent-Length:%2012%0d%0a%0d%0ax=y")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%48xst:%20" + baseRequest.httpService().host() + "%0d%0a%43ontent-Length:%2012%0d%0a%0d%0ax=y")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
             "teUserAgentTimeout" -> {
@@ -223,6 +225,21 @@ class ReqMutator internal constructor() {
             "max-forwardsTrace" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dzx-Forwards:%200%0d%0aX:%20x").withMethod("TRACE")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dax-Forwards:%200%0d%0aX:%20x").withMethod("TRACE")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "clinvalid" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43zntent-Length:%20Z%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43ontent-Length:%20Z%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "split" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "badHeaderName" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX%58:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX%5c:%20x")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
     	    //Something to do with connection header... If we remove a required header like "host" or similar... trying now

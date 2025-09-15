@@ -189,6 +189,12 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 previousVariantAttributes = currentVariantAttributes
             }
 
+
+            //if (serverStatus(benignRequestResponse.response()) != serverStatus(probeRequestResponse.response())) {
+                // Differs enough.... (better implementation=
+            //}
+
+
             if (currentVariantAttributes.isNotEmpty()) {
 
                 //Check for known false positives...
@@ -212,6 +218,9 @@ internal class ReqSplit(name: String?) : Scan(name) {
                             }
                     }
                     if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
+
+                        // todo Validate this further by removing the parts that should actually make this work...
+
                         report("Request Splitting via $technique",
                             "The application behaves in a manner that is consistent with HTTP Request Splitting...",
                             benignRequestResponse,
@@ -226,6 +235,9 @@ internal class ReqSplit(name: String?) : Scan(name) {
                     continue
                 }
 
+                // todo Validate this further by removing the parts that should actually make this work...
+                // Can maybe just check if we now don't get the variant attributes?
+
                 var attributeDiffString = """
                     <table>
                         <tr>
@@ -239,8 +251,16 @@ internal class ReqSplit(name: String?) : Scan(name) {
                     var benignValue = ""
                     var probeValue = ""
                     if (attribute.name == "CONTENT_TYPE") {
-                        benignValue = benignRequestResponse.response().headerValue("Content-Type")
-                        probeValue = probeRequestResponse.response().headerValue("Content-Type")
+                        if (benignRequestResponse.response().hasHeader("Content-Type")) {
+                            benignValue = benignRequestResponse.response().headerValue("Content-Type")
+                        } else {
+                            benignValue = "MISSING"
+                        }
+                        if (probeRequestResponse.response().hasHeader("Content-Type")) {
+                            probeValue = probeRequestResponse.response().headerValue("Content-Type")
+                        } else {
+                            probeValue = "MISSING"
+                        }
                     } else {
                         benignValue = benignRequestResponse.response().attributes(attribute)[0].value().toString()
                         probeValue  = probeRequestResponse.response().attributes(attribute)[0].value().toString()
@@ -288,6 +308,21 @@ fun responseHasErrors(requestResponse: HttpRequestResponse): Boolean {
 fun fixMissingStatuscode(requestResponse: HttpRequestResponse): HttpRequestResponse {
     val fixedRequestResponse = HttpRequestResponse.httpRequestResponse(requestResponse.request(), requestResponse.response().withStatusCode("1337".toShort()).withReasonPhrase("No response headers received"))
     return fixedRequestResponse
+}
+
+fun serverStatus(resp: HttpResponse): String {
+    val serverHeaderValue: String
+    if (resp.hasHeader("Server")) {
+        serverHeaderValue = resp.headerValue("Server")
+    } else {
+        serverHeaderValue = ""
+    }
+    if (resp.statusCode() == "0".toShort()) {
+        return resp.statusCode().toString()
+    } else {
+        return serverHeaderValue + resp.statusCode().toString() // E.g. nginx505
+    }
+    // serverStatus() = "0" if no sheader or status code or it'll just be 404 if no sheader or just nginx0 if server header but no status code
 }
 
 //fun isFalsePositive(requestResponse: HttpRequestResponse, technique: String): Boolean {

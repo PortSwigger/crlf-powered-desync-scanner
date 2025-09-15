@@ -11,11 +11,12 @@ class WAFChecker {
 		"This website is using a security service to protect itself from online attacks. The action you just performed triggered the security solution. There are several actions that could trigger this block including submitting a certain word or phrase, a SQL command or malformed data.",
 		"punsh/waf_block.html",
 		"<BODY>\nAn error occurred while processing your request.<p>",
-		"Request Rejected"
+		"Request Rejected",
+		"Blocked request",
+		"Your request has been blocked"
 	)
 	private val wafSignaturesHeaders = listOf<String>(
-		"AkamaiGHost",
-		"AkamaiNetStorage"
+		"AkamaiGHost"
 	)
 
     init {
