@@ -8,45 +8,67 @@ import kotlin.collections.listOf
 class ReqMutator internal constructor() {
 
     companion object {
-        internal var mutations: SettingsBox = SettingsBox()
+        internal var protocolBasedMutations: SettingsBox = SettingsBox()
+        internal var pathBasedMutations: SettingsBox = SettingsBox()
+        internal var headerBasedMutations: SettingsBox = SettingsBox()
         internal var paramMinerMutations: SettingsBox = SettingsBox()
     }
 
     init {
-        mutations.register("HvsX", true, "/%20X vs /%20H")
-        mutations.register("HTTP/13.37", true, "/%20HTTP/1.1%0D%0AX:%20x vs /%20HTTP/13.37%0D%0AX:%20x")
-        mutations.register("dupeHost", true, "/%20HTTP/1.1%0D%0AXXXX:%20x vs /%20HTTP/1.1%0D%0AHost:%20x")
-        mutations.register("notChunked", true, "/%20HTTP/1.1%0d%0aTransfer-Encoding:%20notchunked%0d%0aFoo:%20bar vs 501 not implemented")
-        mutations.register("robots", true, "/robots.txt%20HTTP/1.1%0d%0aFoo:%20bar vs /robots.txtnot")
-        mutations.register("sitemap", false, "FP prone... /sitemap.xml%20HTTP/1.1%0d%0aFoo:%20bar vs /sitemap.xmlnot")
-        mutations.register("favicon", true, "/favicon.ico%20HTTP/1.1%0d%0aFoo:%20bar vs /favicon.iconot")
-        mutations.register("missingHost", true, "From https://portswigger.net/research/making-http-header-injection-critical-via-response-queue-poisoning")
-        mutations.register("expect", true, "Expect: notreal vs Ezpect: notreal")
-        mutations.register("teTimeout", true, "")
-        mutations.register("clTimeout", true, "")
-        mutations.register("range-valid", true,"")
-        mutations.register("range-invalid", true,"")
-        mutations.register("max-forwardsTimeout", true,"")
-        mutations.register("ifMatch", true, "")
-        mutations.register("responseHeaderInjection", true, "")
-        mutations.register("clNoHost", true, "")
-        mutations.register("teUserAgentTimeout", true, "")
-        mutations.register("headerSpace", true, "")
-        mutations.register("authorization",  true, "")
-        mutations.register("setCookie",  true, "")
-        mutations.register("http/0.9", true, "")
-        mutations.register("http/null", true, "")
-        mutations.register("upgrade", true, "")
-        mutations.register("basic...", false, "")
-        mutations.register("httx", true, "")
-        mutations.register("tunnel", true, "")
-        mutations.register("expect-100", true, "")
-        mutations.register("connection", true, "")
-        mutations.register("max-forwardsTrace", true, "")
-        mutations.register("badHeaderName", true, "")
-        mutations.register("split", true, "")
+        // Protocol based mutations
+        protocolBasedMutations.register("HvsX", true, "/%20X vs /%20H")
+        protocolBasedMutations.register("HTTP/13.37", true, "/%20HTTP/1.1%0D%0AX:%20x vs /%20HTTP/13.37%0D%0AX:%20x")
+        protocolBasedMutations.register("http/0.9", true, "")
+        protocolBasedMutations.register("http/null", true, "")
+        protocolBasedMutations.register("split", true, "End request without host header")
+        //protocolBasedMutations.register("basic...", false, "Doesn't work")
+        protocolBasedMutations.register("httx", true, "")
+        protocolBasedMutations.register("tunnel", true, "")
+
+        // Header based mutations
+        headerBasedMutations.register("dupeHost", true, "")
+        headerBasedMutations.register("dupeHostSpace", true, "")
+        headerBasedMutations.register("dupeHostTab", true, "")
+        headerBasedMutations.register("notChunked", true, "")
+        headerBasedMutations.register("missingHost", true, "From https://portswigger.net/research/making-http-header-injection-critical-via-response-queue-poisoning")
+        headerBasedMutations.register("expect", true, "")
+        headerBasedMutations.register("teTimeout", true, "")
+        headerBasedMutations.register("clTimeout", true, "")
+        headerBasedMutations.register("range-valid", true,"")
+        headerBasedMutations.register("range-invalid", true,"")
+        headerBasedMutations.register("max-forwardsTimeout", true,"")
+        headerBasedMutations.register("ifMatch", true, "")
+        headerBasedMutations.register("responseHeaderInjection", true, "")
+        headerBasedMutations.register("clNoHost", true, "")
+        headerBasedMutations.register("teUserAgentTimeout", true, "")
+        headerBasedMutations.register("headerSpace", true, "")
+        headerBasedMutations.register("authorization",  true, "")
+        headerBasedMutations.register("setCookie",  true, "")
+        headerBasedMutations.register("upgrade", true, "")
+        headerBasedMutations.register("expect-100", true, "")
+        headerBasedMutations.register("connection", true, "")
+        for (i in 0 .. 4) {
+            headerBasedMutations.register("max-forwardsTrace$i", true, "")
+            headerBasedMutations.register("max-forwardsOptions$i", true, "")
+        }
+        headerBasedMutations.register("badHeaderName", true, "")
+        headerBasedMutations.register("clinvalid", true, "")
+        headerBasedMutations.register("accept", true, "")
+        headerBasedMutations.register("headerTab", true, "")
+        headerBasedMutations.register("headerWrap", true, "")
+        headerBasedMutations.register("contentType-invalid", true, "")
+        //mutations.register("headerSemiColon", false, "") Extremely FP prone... A lot of servers just reject ";" full stop
+
+        // Path based mutations
+        pathBasedMutations.register("robots", true, "/robots.txt%20HTTP/1.1%0d%0aFoo:%20bar vs /robots.txtnot")
+        pathBasedMutations.register("sitemap", false, "FP prone... /sitemap.xml%20HTTP/1.1%0d%0aFoo:%20bar vs /sitemap.xmlnot")
+        pathBasedMutations.register("favicon", true, "/favicon.ico%20HTTP/1.1%0d%0aFoo:%20bar vs /favicon.iconot")
+
+
+
 
         //Could dynamically register a mutation for litterally every header in param-miner...
+        // todo Create permutations additionally...
         this::class.java.getResourceAsStream("/headers")?.bufferedReader()?.lines()?.forEach {
                 headerName -> paramMinerMutations.register("header|$headerName", true, "")
         }
@@ -66,7 +88,8 @@ class ReqMutator internal constructor() {
         payload.name = technique
 
         if (technique.startsWith("header|") && Utilities.globalSettings.getBoolean("Enable dodgy BPS diff")) {
-            val headerName = technique.split("|")[1]
+            var headerName = technique.split("|")[1]
+            if (headerName[0].isLowerCase()) {headerName = headerName[0].toString().uppercase() + headerName.substring(1)} //uppercase the first letter of headers to be more... compliant...
             val endOfheaderName = headerName.substring(1)
             val encodedFirstChar = String.format("%%%02x", headerName[0].toByte()) //URL ENCODE the first byte
             payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a$encodedFirstChar${endOfheaderName.replaceFirst(headerName.get(0).toString(), "z")}:%20nottherightvalue%0d%0aX:%20x")
@@ -94,6 +117,16 @@ class ReqMutator internal constructor() {
             "dupeHost" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0D%0A%48xst:%20x%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0D%0A%48ost:%20x%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "dupeHostSpace" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0D%0A%48xst%20:%20x%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0D%0A%48ost%20:%20x%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "dupeHostTab" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0D%0A%48xst%09:%20x%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0D%0A%48ost%09:%20x%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
             "expect" -> {
@@ -222,10 +255,18 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43onnection:%20Host%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
-            "max-forwardsTrace" -> {
-                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dzx-Forwards:%200%0d%0aX:%20x").withMethod("TRACE")
-                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dax-Forwards:%200%0d%0aX:%20x").withMethod("TRACE")
-                payload.expectedResponseMatches = listOf("400 Bad Request")
+            "max-forwardsTrace"+technique[technique.length - 1] -> {
+                val maxForwardsValue = technique[technique.length - 1]
+                val canary = Utilities.montoyaApi.utilities().randomUtils().randomString(8)
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dzx-Forwards:%20$maxForwardsValue%0d%0aX:%20x").withMethod("TRACE").withAddedHeader("Foo", canary)
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dax-Forwards:%20$maxForwardsValue%0d%0aX:%20x").withMethod("TRACE").withAddedHeader("Foo", canary)
+                payload.expectedResponseMatches = listOf(canary)
+            }
+            "max-forwardsOptions"+technique[technique.length - 1] -> {
+                val maxForwardsValue = technique[technique.length - 1]
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dzx-Forwards:%20$maxForwardsValue%0d%0aX:%20x").withMethod("OPTIONS")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4dax-Forwards:%20$maxForwardsValue%0d%0aX:%20x").withMethod("OPTIONS")
+                payload.expectedResponseMatches = listOf("200 OK")
             }
             "clinvalid" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43zntent-Length:%20Z%0d%0aX:%20x")
@@ -241,6 +282,31 @@ class ReqMutator internal constructor() {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX%58:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX%5c:%20x")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "accept" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%41zcept:%20foo/bar%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%41ccept:%20foo/bar%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("406 Not Acceptable")
+            }
+            "headerTab" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX%09:%20x")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "headerWrap" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20%0d%0a%20x")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "headerSemiColon" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX;%20x")
+                payload.expectedResponseMatches = listOf("400 Bad Request")
+            }
+            "contentType-invalid" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43zntent-Type:%20foobar%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43ontent-Type:%20foobar%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("406 Not Acceptable")
             }
     	    //Something to do with connection header... If we remove a required header like "host" or similar... trying now
             //Something to do with the akamai talk on unicode... `%e5%98%8d%e5%98%8a == %0d%0a` somehow...
