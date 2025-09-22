@@ -9,11 +9,15 @@ class WAFChecker {
 		"The requested URL was rejected. Please consult with your administrator",
 		"Your request was blocked by DPG Media's Web Application Firewall.",
 		"This website is using a security service to protect itself from online attacks. The action you just performed triggered the security solution. There are several actions that could trigger this block including submitting a certain word or phrase, a SQL command or malformed data.",
-		"punsh/waf_block.html",
+		"punish/waf_block.html",
 		"<BODY>\nAn error occurred while processing your request.<p>",
 		"Request Rejected",
 		"Blocked request",
-		"Your request has been blocked"
+		"Your request has been blocked",
+		"0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234",
+		"Acceso Denegado",
+		"WAF Blocked Request"
+
 	)
 	private val wafSignaturesHeaders = listOf<String>(
 		"AkamaiGHost"

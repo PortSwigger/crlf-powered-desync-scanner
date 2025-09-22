@@ -1,6 +1,9 @@
 package burp
 
-import burp.ReqMutator.Companion.mutations
+import burp.ReqMutator.Companion.headerBasedMutations
+import burp.ReqMutator.Companion.pathBasedMutations
+import burp.ReqMutator.Companion.protocolBasedMutations
+import burp.ReqMutator.Companion.smuggleBasedMutations
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.message.HttpRequestResponse
@@ -8,6 +11,7 @@ import burp.api.montoya.http.message.StatusCodeClass
 import burp.api.montoya.http.message.responses.HttpResponse
 import burp.api.montoya.http.message.responses.analysis.AttributeType
 import burp.api.montoya.logging.Logging
+import kotlin.math.log
 import kotlin.random.Random
 
 //this is a basic scan check implementation
@@ -28,12 +32,17 @@ internal class ReqSplit(name: String?) : Scan(name) {
         super.name
 
         scanSettings.register("Filter Known FP", true)
-        scanSettings.register("Enable dodgy BPS diff", false, "If predicted match fails, report findings based Backslash Powered Scanner-style diff")
-        scanSettings.register("Enable param-miner headers", false, "")
-	scanSettings.register("maintain path", false)
+        // scanSettings.register("Enable dodgy BPS diff", false, "If predicted match fails, report findings based Backslash Powered Scanner-style diff") // We don't need this anymore since we report a "firmer" version if we can and then follow up with diff afterwards.
+        // That said, might be usedful for param-miner-style guessing of headers for header smuggling etc?
+        scanSettings.register("Enable param-miner headers", false, "Check for any header in the param-miner list that causes a significant difference in the response (server header + status)")
+	    scanSettings.register("maintain path", false)
+        scanSettings.register("Log issues to output", false)
 
         scanSettings.importSettings(BurpExtender.configSettings)
-        scanSettings.importSettings(mutations)
+        scanSettings.importSettings(headerBasedMutations)
+        scanSettings.importSettings(pathBasedMutations)
+        scanSettings.importSettings(protocolBasedMutations)
+        scanSettings.importSettings(smuggleBasedMutations)
 
     }
 
@@ -42,8 +51,24 @@ internal class ReqSplit(name: String?) : Scan(name) {
 
 	val wafChecker = WAFChecker()
 
+        // Add all the enabled permutations types
         val enabledMutations = arrayListOf<String>()
-        for (mutation in mutations.settings) {
+        for (mutation in headerBasedMutations.settings) {
+            if (Utilities.globalSettings.getBoolean(mutation)) {
+                enabledMutations.add(mutation)
+            }
+        }
+        for (mutation in pathBasedMutations.settings) {
+            if (Utilities.globalSettings.getBoolean(mutation)) {
+                enabledMutations.add(mutation)
+            }
+        }
+        for (mutation in protocolBasedMutations.settings) {
+            if (Utilities.globalSettings.getBoolean(mutation)) {
+                enabledMutations.add(mutation)
+            }
+        }
+        for (mutation in smuggleBasedMutations.settings) {
             if (Utilities.globalSettings.getBoolean(mutation)) {
                 enabledMutations.add(mutation)
             }
@@ -72,11 +97,11 @@ internal class ReqSplit(name: String?) : Scan(name) {
 
             val baseRequest = Utilities.buildMontoyaReq(Utilities.addCacheBuster(baseReq, Utilities.generateCanary()), service) //Easy way to build a montoya request so you can stop messing with the old version
 
-            var currentVariantAttributes = mutableSetOf<AttributeType>()
-            var previousVariantAttributes = mutableSetOf<AttributeType>()
+            var currentStatusDiff = ""
+            var previousStatusDiff = ""
 
-            lateinit var previousBenignResponse: HttpResponse
-            lateinit var previousProbeResponse: HttpResponse
+            lateinit var previousBenignRequestResponse: HttpRequestResponse
+            lateinit var previousProbeRequestResponse: HttpRequestResponse
 
             lateinit var benignRequestResponse: HttpRequestResponse
             lateinit var probeRequestResponse: HttpRequestResponse
@@ -93,34 +118,17 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 val sendBenignRequest = {
                     benignRequestResponse = Utilities.montoyaApi.http().sendRequest(probe.benignRequest, hpMode)
 
-                    if (responseHasErrors(benignRequestResponse)) {
-                        currentVariantAttributes = mutableSetOf<AttributeType>() //Reset to not cause issues
-                        false //indicate failure
-                    } else {
-
-                        //If we have no status code... fix that...
-                        if (benignRequestResponse.response().statusCode() == "0".toShort()) {
-                            benignRequestResponse = fixMissingStatuscode(benignRequestResponse)
-                        }
-                        true
-                    }
+                    !responseHasErrors(benignRequestResponse) //indicate failure
                 }
 
                 val sendProbeRequest = {
                     probeRequestResponse = Utilities.montoyaApi.http().sendRequest(probe.probeRequest, hpMode)
 
-                    if (responseHasErrors(probeRequestResponse) && !technique.contains("timeout", true)) { //If it's an expected timeout, don't check for errors
-                        currentVariantAttributes = mutableSetOf<AttributeType>() //reset to not cause issues.
-                        false //indicate failure
-                    } else {
-                        //If we have no status code... fix that...
-                        if (!technique.contains("timeout", true)) {//If it's an expected timeout, don't check for status
-                            if (probeRequestResponse.response().statusCode() == "0".toShort()) {
-                                probeRequestResponse = fixMissingStatuscode(probeRequestResponse)
-                            }
-                        }
+                    !(responseHasErrors(probeRequestResponse) && !technique.contains(
+                        "timeout",
                         true
-                    }
+                    )) //If it's an expected timeout, don't check for errors
+                    //indicate failure
                 }
 
 
@@ -133,69 +141,51 @@ internal class ReqSplit(name: String?) : Scan(name) {
 
                 //Exit if either probe failed
                 if (!runSuccess) {
-                    currentVariantAttributes = mutableSetOf<AttributeType>()
+                    currentStatusDiff = ""
                     break
                 }
 
                 //Check if the responses are inconsistent on their own...
                 if (i != 1) { //Skip on first run...
-                    val baseResponseVariationsAnalyzer = Utilities.montoyaApi.http().createResponseVariationsAnalyzer()
-                    baseResponseVariationsAnalyzer.updateWith(previousBenignResponse)
-                    baseResponseVariationsAnalyzer.updateWith(benignRequestResponse.response())
 
-                    val probeResponseVariationsAnalyzer = Utilities.montoyaApi.http().createResponseVariationsAnalyzer()
-                    probeResponseVariationsAnalyzer.updateWith(previousProbeResponse)
-                    probeResponseVariationsAnalyzer.updateWith(probeRequestResponse.response())
+                    //Benign
+                    if (serverStatus(benignRequestResponse) != serverStatus(previousBenignRequestResponse)) {
+                        currentStatusDiff = ""
+                        break
+                    }
 
-                    val baseVariantAttributes = baseResponseVariationsAnalyzer.variantAttributes().intersect(interestingAttributes)
-                    val probeVariantAttributes = probeResponseVariationsAnalyzer.variantAttributes().intersect(interestingAttributes)
-
-                    if (baseVariantAttributes.isNotEmpty() || probeVariantAttributes.isNotEmpty()) {
-                        //Requests are inconsistent on their own... gotta skip
-                        currentVariantAttributes = mutableSetOf<AttributeType>() //reset to not cause issues.
+                    //Probe
+                    if (serverStatus(probeRequestResponse) != serverStatus(previousProbeRequestResponse)) {
+                        currentStatusDiff = ""
                         break
                     }
                 }
 
                 //Set previous responses to keep track...
-                previousBenignResponse = benignRequestResponse.response()
-                previousProbeResponse = probeRequestResponse.response()
+                previousBenignRequestResponse = benignRequestResponse
+                previousProbeRequestResponse = probeRequestResponse
 
 
-
-                val responseVariationsAnalyzer = Utilities.montoyaApi.http().createResponseVariationsAnalyzer()
-                responseVariationsAnalyzer.updateWith(benignRequestResponse.response())
-
-                if (probeRequestResponse.hasResponse()) {
-                    responseVariationsAnalyzer.updateWith(probeRequestResponse.response())
-                } else { //assume timeout. create empty response if it doesn't already exist
-                    val timeoutResponse = HttpResponse.httpResponse()
-                    responseVariationsAnalyzer.updateWith(timeoutResponse)
-                }
-
-                currentVariantAttributes = responseVariationsAnalyzer.variantAttributes().intersect(interestingAttributes).toMutableSet()
-
-                // If nothing changes at all, give up
-                if (currentVariantAttributes.isEmpty()) {
+                //If no difference in responses... then give up
+                if (serverStatus(probeRequestResponse) == serverStatus(benignRequestResponse)) {
+                    currentStatusDiff = ""
                     break
                 }
 
-                //If after the current repeat our variant attributes don't match... somethings inconsistent regardless of probe
-                if (i != 1 && previousVariantAttributes != currentVariantAttributes) {
+                currentStatusDiff = serverStatus(benignRequestResponse) + "|" + serverStatus(probeRequestResponse)
+
+
+                //If after the current repeat our <server><status> strings don't match... somethings inconsistent regardless of probe
+                if (i != 1 && previousStatusDiff != currentStatusDiff) {
                     //Make the attributes empty so we can prevent reporting
-                    currentVariantAttributes = mutableSetOf()
+                    currentStatusDiff = ""
                     break
                 }
-                previousVariantAttributes = currentVariantAttributes
+                previousStatusDiff = currentStatusDiff
             }
 
-
-            //if (serverStatus(benignRequestResponse.response()) != serverStatus(probeRequestResponse.response())) {
-                // Differs enough.... (better implementation=
-            //}
-
-
-            if (currentVariantAttributes.isNotEmpty()) {
+            // This should be set to "" if there is no difference
+            if (currentStatusDiff.isNotEmpty()) {
 
                 //Check for known false positives...
                 if (Utilities.globalSettings.getBoolean("Filter Known FP") && (wafChecker.isWafResponse(probeRequestResponse.response()) || wafChecker.isWafResponse(benignRequestResponse.response()))) {
@@ -220,68 +210,64 @@ internal class ReqSplit(name: String?) : Scan(name) {
                     if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
 
                         // todo Validate this further by removing the parts that should actually make this work...
+                        if (!confirmedVulnerable(probeRequestResponse)) {
+                            // followUp tells us it's a FP
+                            continue
+                        }
 
                         report("Request Splitting via $technique",
                             "The application behaves in a manner that is consistent with HTTP Request Splitting...",
                             benignRequestResponse,
                             probeRequestResponse
                         )
+
+                        if (Utilities.globalSettings.getBoolean("Log issues to output")) {
+                            Utilities.out("Request Splitting via $technique at ${benignRequestResponse.request().url()}")
+                        }
+
                         continue
                     }
                 }
 
                 //Skip any techniques that we don't care about checking response attributes for OR just skip altogether if not enabled
-                if (technique in listOf("robots", "sitemap", "favicon") || !Utilities.globalSettings.getBoolean("Enable dodgy BPS diff")) {
+                if (technique in listOf("robots", "sitemap", "favicon")) {
                     continue
                 }
 
                 // todo Validate this further by removing the parts that should actually make this work...
-                // Can maybe just check if we now don't get the variant attributes?
+                if (!confirmedVulnerable(probeRequestResponse)) {
+                    // followUp tells us it's a FP
+                    continue
+                }
 
-                var attributeDiffString = """
+                var statusDiffString = """
                     <table>
                         <tr>
-                            <td></td>
                             <td><b>Base<b></td>
                             <td><b>Probe<b></td>
                         </tr>
                 """.trimIndent()
 
-                for (attribute in currentVariantAttributes) {
-                    var benignValue = ""
-                    var probeValue = ""
-                    if (attribute.name == "CONTENT_TYPE") {
-                        if (benignRequestResponse.response().hasHeader("Content-Type")) {
-                            benignValue = benignRequestResponse.response().headerValue("Content-Type")
-                        } else {
-                            benignValue = "MISSING"
-                        }
-                        if (probeRequestResponse.response().hasHeader("Content-Type")) {
-                            probeValue = probeRequestResponse.response().headerValue("Content-Type")
-                        } else {
-                            probeValue = "MISSING"
-                        }
-                    } else {
-                        benignValue = benignRequestResponse.response().attributes(attribute)[0].value().toString()
-                        probeValue  = probeRequestResponse.response().attributes(attribute)[0].value().toString()
-                    }
+                statusDiffString += """
+                    <tr>
+                        <td>${currentStatusDiff.split("|")[0]}</td>
+                        <td>${currentStatusDiff.split("|")[1]}</td>
+                    </tr>
+                """.trimIndent()
 
-                    attributeDiffString += """
-                        <tr>
-                            <td>${attribute.name}</td>
-                            <td>$benignValue</td>
-                            <td>$probeValue</td>
-                        </tr>
-                    """
-                }
-                attributeDiffString += "</table>"
+                statusDiffString += "</table>"
 
                 report(
                     "Request Splitting via $technique - Dodgy", """
                     The application behaves in a manner that is consistent with HTTP Request Splitting...Sort of:<br>
-                    $attributeDiffString
+                    $statusDiffString
                      """, benignRequestResponse, probeRequestResponse
                 )
+
+                if (Utilities.globalSettings.getBoolean("Log issues to output")) {
+                    Utilities.out("Request Splitting via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
+                }
+
                 continue
             }
         }
@@ -310,7 +296,13 @@ fun fixMissingStatuscode(requestResponse: HttpRequestResponse): HttpRequestRespo
     return fixedRequestResponse
 }
 
-fun serverStatus(resp: HttpResponse): String {
+fun serverStatus(reqResp: HttpRequestResponse): String {
+    if (!reqResp.hasResponse()) {
+        return "TIMEOUT"
+    }
+
+    val resp = reqResp.response()
+
     val serverHeaderValue: String
     if (resp.hasHeader("Server")) {
         serverHeaderValue = resp.headerValue("Server")
@@ -325,54 +317,27 @@ fun serverStatus(resp: HttpResponse): String {
     // serverStatus() = "0" if no sheader or status code or it'll just be 404 if no sheader or just nginx0 if server header but no status code
 }
 
-//fun isFalsePositive(requestResponse: HttpRequestResponse, technique: String): Boolean {
-//
-//    if (!requestResponse.hasResponse()) {
-//        return false
-//    }
-//
-//    val response = requestResponse.response()
-//
-//    var serverHeader: String = ""
-//    if (response.hasHeader("server")) {
-//        serverHeader = response.headerValue("server")
-//    } else {
-//        serverHeader = ""
-//    }
-//
-//    //Filter out akamai and it's host based sillyness
-//    if (technique.contains("host", true) && (serverHeader.contains("akamai", true) || response.bodyToString().contains("edgesuite", true))) {
-//        return true
-//    }
-//
-//    //Filter out akamai and it's Content-Length in path sillyness
-//    if (technique.contains("clTimeout", true) && (serverHeader.contains("akamai", true) || response.bodyToString().contains("edgesuite", true))) {
-//        return true
-//    }
-//
-//    //Filter out tengine and it's silly WAF.
-//    if (technique.contains("1337", true) && (response.bodyToString().contains("punish/waf_block.html", true))) {
-//        return true
-//    }
-//
-//    if (response.statusCode() == "403".toShort() &&
-//        response.contains("You don't have permission to access ", true) &&
-//        response.contains("edgesuite", true)) {
-//        return true
-//    }
-//
-//    //See this a lot
-//    if (technique == "header|javascript" && response.bodyToString().contains("The requested URL was rejected. Please consult with your administrator")) {
-//        return true
-//    }
-//
-//    if (technique in listOf("header|content-encoding", "header|connection") && response.bodyToString().contains("Your request was blocked by DPG Media's Web Application Firewall.")) {
-//        return true
-//    }
-//
-//    if (technique in listOf("header|javascript") && response.bodyToString().contains("This website is using a security service to protect itself from online attacks. The action you just performed triggered the security solution. There are several actions that could trigger this block including submitting a certain word or phrase, a SQL command or malformed data.")) {
-//        return true
-//    }
-//
-//    return false
-//}
+fun confirmedVulnerable(probeReqResp: HttpRequestResponse): Boolean {
+    val noProbePath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}%0d%0a"), "") //remove CLRF to ensure it's not any other part of the payload that triggers interesting behaviour
+    val confirmReq = probeReqResp.request().withPath(noProbePath)
+
+    val confirmReqResp = Utilities.montoyaApi.http().sendRequest(confirmReq)
+
+    if (serverStatus(confirmReqResp) == serverStatus(probeReqResp)) {
+        //With removed CLRF injections... this should no way have made the same response...
+        return false
+    }
+
+    val noHttpPath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}"), "") // remove anything except %0d%0a
+    val confirmReqNoHttp = probeReqResp.request().withPath((noHttpPath))
+
+    val confirmReqRespNoHttp = Utilities.montoyaApi.http().sendRequest(confirmReqNoHttp)
+
+    if (serverStatus(confirmReqRespNoHttp) == serverStatus(probeReqResp)) {
+        // If still the same then probably a WAF or FP
+        return false
+    }
+    // If they still differ, good, time to report
+    // Could follow up further here...Perhaps remove only HTTP/X.X to see if it is the %0d%0a that causes the issue... would work on most WAFs too since if %0d%0aHeader:%20value is the same response... it was likely WAF
+    return true
+}
