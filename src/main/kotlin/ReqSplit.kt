@@ -3,6 +3,7 @@ package burp
 import burp.ReqMutator.Companion.headerBasedMutations
 import burp.ReqMutator.Companion.pathBasedMutations
 import burp.ReqMutator.Companion.protocolBasedMutations
+import burp.ReqMutator.Companion.smuggleBasedMutations
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.message.HttpRequestResponse
@@ -31,8 +32,9 @@ internal class ReqSplit(name: String?) : Scan(name) {
         super.name
 
         scanSettings.register("Filter Known FP", true)
-        scanSettings.register("Enable dodgy BPS diff", false, "If predicted match fails, report findings based Backslash Powered Scanner-style diff")
-        scanSettings.register("Enable param-miner headers", false, "")
+        // scanSettings.register("Enable dodgy BPS diff", false, "If predicted match fails, report findings based Backslash Powered Scanner-style diff") // We don't need this anymore since we report a "firmer" version if we can and then follow up with diff afterwards.
+        // That said, might be usedful for param-miner-style guessing of headers for header smuggling etc?
+        scanSettings.register("Enable param-miner headers", false, "Check for any header in the param-miner list that causes a significant difference in the response (server header + status)")
 	    scanSettings.register("maintain path", false)
         scanSettings.register("Log issues to output", false)
 
@@ -40,6 +42,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
         scanSettings.importSettings(headerBasedMutations)
         scanSettings.importSettings(pathBasedMutations)
         scanSettings.importSettings(protocolBasedMutations)
+        scanSettings.importSettings(smuggleBasedMutations)
 
     }
 
@@ -61,6 +64,11 @@ internal class ReqSplit(name: String?) : Scan(name) {
             }
         }
         for (mutation in protocolBasedMutations.settings) {
+            if (Utilities.globalSettings.getBoolean(mutation)) {
+                enabledMutations.add(mutation)
+            }
+        }
+        for (mutation in smuggleBasedMutations.settings) {
             if (Utilities.globalSettings.getBoolean(mutation)) {
                 enabledMutations.add(mutation)
             }
@@ -214,7 +222,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
                         )
 
                         if (Utilities.globalSettings.getBoolean("Log issues to output")) {
-                            Utilities.log("Request Splitting via $technique at ${benignRequestResponse.request().url()}")
+                            Utilities.out("Request Splitting via $technique at ${benignRequestResponse.request().url()}")
                         }
 
                         continue
@@ -222,7 +230,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 }
 
                 //Skip any techniques that we don't care about checking response attributes for OR just skip altogether if not enabled
-                if (technique in listOf("robots", "sitemap", "favicon") || !Utilities.globalSettings.getBoolean("Enable dodgy BPS diff")) {
+                if (technique in listOf("robots", "sitemap", "favicon")) {
                     continue
                 }
 
@@ -257,7 +265,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 )
 
                 if (Utilities.globalSettings.getBoolean("Log issues to output")) {
-                    Utilities.log("Request Splitting via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
+                    Utilities.out("Request Splitting via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
                 }
 
                 continue
@@ -320,7 +328,7 @@ fun confirmedVulnerable(probeReqResp: HttpRequestResponse): Boolean {
         return false
     }
 
-    val noHttpPath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}]"), "") // remove anything except %0d%0a
+    val noHttpPath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}"), "") // remove anything except %0d%0a
     val confirmReqNoHttp = probeReqResp.request().withPath((noHttpPath))
 
     val confirmReqRespNoHttp = Utilities.montoyaApi.http().sendRequest(confirmReqNoHttp)

