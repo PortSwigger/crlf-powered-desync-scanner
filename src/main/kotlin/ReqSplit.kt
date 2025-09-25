@@ -37,6 +37,8 @@ internal class ReqSplit(name: String?) : Scan(name) {
         scanSettings.register("Enable param-miner headers", false, "Check for any header in the param-miner list that causes a significant difference in the response (server header + status)")
 	    scanSettings.register("maintain path", false)
         scanSettings.register("Log issues to output", false)
+        scanSettings.register("Enable follow up", true, "Follow up with a few more probes to better confirm true positives.")
+        //scanSettings.register("include query-param in cachebusters", false, "Breaks things sometimes...") //Maybe this doesn't break things...
 
         scanSettings.importSettings(BurpExtender.configSettings)
         scanSettings.importSettings(headerBasedMutations)
@@ -210,7 +212,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
                     if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
 
                         // todo Validate this further by removing the parts that should actually make this work...
-                        if (!confirmedVulnerable(probeRequestResponse)) {
+                        if (!confirmedVulnerable(probeRequestResponse) && Utilities.globalSettings.getBoolean("Enable follow up")) {
                             // followUp tells us it's a FP
                             continue
                         }
@@ -235,7 +237,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 }
 
                 // todo Validate this further by removing the parts that should actually make this work...
-                if (!confirmedVulnerable(probeRequestResponse)) {
+                if (!confirmedVulnerable(probeRequestResponse) && Utilities.globalSettings.getBoolean("Enable follow up")) {
                     // followUp tells us it's a FP
                     continue
                 }
@@ -318,6 +320,8 @@ fun serverStatus(reqResp: HttpRequestResponse): String {
 }
 
 fun confirmedVulnerable(probeReqResp: HttpRequestResponse): Boolean {
+
+    // Remove HTTP/1.1%0d%0a
     val noProbePath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}%0d%0a"), "") //remove CLRF to ensure it's not any other part of the payload that triggers interesting behaviour
     val confirmReq = probeReqResp.request().withPath(noProbePath)
 
@@ -328,6 +332,7 @@ fun confirmedVulnerable(probeReqResp: HttpRequestResponse): Boolean {
         return false
     }
 
+    // Remove only HTTP/1.1
     val noHttpPath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}"), "") // remove anything except %0d%0a
     val confirmReqNoHttp = probeReqResp.request().withPath((noHttpPath))
 
