@@ -1,6 +1,7 @@
 package burp
 
 import burp.ReqMutator.Companion.headerBasedMutations
+import burp.ReqMutator.Companion.paramMinerMutations
 import burp.ReqMutator.Companion.pathBasedMutations
 import burp.ReqMutator.Companion.protocolBasedMutations
 import burp.ReqMutator.Companion.smuggleBasedMutations
@@ -39,12 +40,14 @@ internal class ReqSplit(name: String?) : Scan(name) {
         scanSettings.register("Log issues to output", false)
         scanSettings.register("Enable follow up", true, "Follow up with a few more probes to better confirm true positives.")
         //scanSettings.register("include query-param in cachebusters", false, "Breaks things sometimes...") //Maybe this doesn't break things...
+        scanSettings.register("Enable fallback diff", true, "Fallback to diffing <serverStatus> if expected match fails")
 
         scanSettings.importSettings(BurpExtender.configSettings)
         scanSettings.importSettings(headerBasedMutations)
         scanSettings.importSettings(pathBasedMutations)
         scanSettings.importSettings(protocolBasedMutations)
         scanSettings.importSettings(smuggleBasedMutations)
+        //scanSettings.importSettings(paramMinerMutations) NO don't do this.
 
     }
 
@@ -77,7 +80,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
         }
         //Add param miner headers if enabled
         if (Utilities.globalSettings.getBoolean("Enable param-miner headers")) {
-            for (mutation in ReqMutator.paramMinerMutations.settings) {
+            for (mutation in paramMinerMutations.settings) {
                 enabledMutations.add(mutation)
             }
         }
@@ -183,6 +186,18 @@ internal class ReqSplit(name: String?) : Scan(name) {
                     currentStatusDiff = ""
                     break
                 }
+
+                //If we don't hit all the expected response matches when "Enable fallback Diff" is disabled, we can exit.
+                if (!Utilities.globalSettings.getBoolean("Enable fallback diff")) {
+                    for (match in probe.expectedResponseMatches) {
+                        if (!probeRequestResponse.response().contains(match, true)) {
+                            //If fallback diff isn't enabled, then we can exit early here
+                            currentStatusDiff = ""
+                            break
+                        }
+                    }
+                }
+
                 previousStatusDiff = currentStatusDiff
             }
 
@@ -201,24 +216,68 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 if (!technique.contains("timeout", true)) {
                     probe.expectedResponseMatches.forEach {
                         match ->
-                            if (probeRequestResponse.response().contains(match, true)) {
-                                numberOfMatches += 1
-                            }
+                            //Check for generic matches...
+//                            if (match == "TIMEOUT") {
+//                                if (!probeRequestResponse.hasResponse()) {
+//                                    numberOfMatches += 1
+//                                }
+//                                if (!benignRequestResponse.hasResponse()) {
+//                                    numberOfMatches = 0
+//                                }
+//                            }
+                            if (match == "NO_HEADERS") {
+                                if (probeRequestResponse.response().statusCode() == "0".toShort()) {
+                                    numberOfMatches += 1
+                                }
+                                if (benignRequestResponse.response().statusCode() == "0".toShort()) {
+                                    numberOfMatches = 0
+                                }
+                            } else {
 
-                            if (benignRequestResponse.response().contains(match, true)) {
-                                numberOfMatches = 0 //set to 0 to cause the logic below to fail... if the match also appears in the base response it's probably nothing...
+                                if (probeRequestResponse.response().contains(match, true)) {
+                                    numberOfMatches += 1
+                                }
+
+                                if (benignRequestResponse.response().contains(match, true)) {
+                                    numberOfMatches = 0 //set to 0 to cause the logic below to fail... if the match also appears in the base response it's probably nothing...
+                                }
                             }
                     }
                     if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
 
                         // todo Validate this further by removing the parts that should actually make this work...
-                        if (!confirmedVulnerable(probeRequestResponse) && Utilities.globalSettings.getBoolean("Enable follow up")) {
+                        if (!confirmedVulnerable(probeRequestResponse, technique) && Utilities.globalSettings.getBoolean("Enable follow up")) {
                             // followUp tells us it's a FP
                             continue
                         }
 
+                        var statusDiffString = """
+                            <table>
+                                <tr>
+                                    <td><b>Base<b></td>
+                                    <td><b>Probe<b></td>
+                                </tr>
+                        """.trimIndent()
+
+                            statusDiffString += """
+                            <tr>
+                                <td>${currentStatusDiff.split("|")[0]}</td>
+                                <td>${currentStatusDiff.split("|")[1]}</td>
+                            </tr>
+                        """.trimIndent()
+
+                        statusDiffString += "</table>"
+
+                        //Fix broken responses... (responses without status codes...)
+                        if (probeRequestResponse.response().statusCode() == "0".toShort()) {
+                            probeRequestResponse = HttpRequestResponse.httpRequestResponse(probeRequestResponse.request(), probeRequestResponse.response().withStatusCode("1337".toShort()))
+                        }
+
                         report("Request Splitting via $technique",
-                            "The application behaves in a manner that is consistent with HTTP Request Splitting...",
+                            """
+                            The application behaves in a manner that is consistent with HTTP Request Splitting...<br>
+                            $statusDiffString
+                            """,
                             benignRequestResponse,
                             probeRequestResponse
                         )
@@ -231,13 +290,17 @@ internal class ReqSplit(name: String?) : Scan(name) {
                     }
                 }
 
+                if (!Utilities.globalSettings.getBoolean("Enable fallback diff")) {
+                    continue
+                }
+
                 //Skip any techniques that we don't care about checking response attributes for OR just skip altogether if not enabled
                 if (technique in listOf("robots", "sitemap", "favicon")) {
                     continue
                 }
 
                 // todo Validate this further by removing the parts that should actually make this work...
-                if (!confirmedVulnerable(probeRequestResponse) && Utilities.globalSettings.getBoolean("Enable follow up")) {
+                if (!confirmedVulnerable(probeRequestResponse, technique) && Utilities.globalSettings.getBoolean("Enable follow up")) {
                     // followUp tells us it's a FP
                     continue
                 }
@@ -319,30 +382,57 @@ fun serverStatus(reqResp: HttpRequestResponse): String {
     // serverStatus() = "0" if no sheader or status code or it'll just be 404 if no sheader or just nginx0 if server header but no status code
 }
 
-fun confirmedVulnerable(probeReqResp: HttpRequestResponse): Boolean {
+fun confirmedVulnerable(probeReqResp: HttpRequestResponse, technique: String): Boolean {
+    //Filter out ones that will break.... robots.txt?anything will of course work so...
+    if (technique in listOf("robots", "sitemap", "favicon")) {
+        return true
+    }
 
-    // Remove HTTP/1.1%0d%0a
-    val noProbePath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}%0d%0a"), "") //remove CLRF to ensure it's not any other part of the payload that triggers interesting behaviour
-    val confirmReq = probeReqResp.request().withPath(noProbePath)
 
-    val confirmReqResp = Utilities.montoyaApi.http().sendRequest(confirmReq)
+    //Add %3f after the path?
+    val withQueryProbePath = probeReqResp.request().pathWithoutQuery().replaceFirst("%20", "?%20")
+    val withQueryProbeReq = probeReqResp.request().withPath(withQueryProbePath)
+    val confirmReqResp = Utilities.montoyaApi.http().sendRequest(withQueryProbeReq)
 
     if (serverStatus(confirmReqResp) == serverStatus(probeReqResp)) {
-        //With removed CLRF injections... this should no way have made the same response...
+        //If we get the same response haveing made the entire path a query component... it's a FP
         return false
     }
 
-    // Remove only HTTP/1.1
-    val noHttpPath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}"), "") // remove anything except %0d%0a
-    val confirmReqNoHttp = probeReqResp.request().withPath((noHttpPath))
+    val confirmReqResp2 = Utilities.montoyaApi.http().sendRequest(withQueryProbeReq.withPath(withQueryProbePath.replaceFirst("?%20", "%3f%20")))
 
-    val confirmReqRespNoHttp = Utilities.montoyaApi.http().sendRequest(confirmReqNoHttp)
-
-    if (serverStatus(confirmReqRespNoHttp) == serverStatus(probeReqResp)) {
-        // If still the same then probably a WAF or FP
+    if (serverStatus(confirmReqResp2) != serverStatus(probeReqResp)) {
+        //if encoding the query then produces the a different serverStatus it's a FP... nginx should be fine with this
         return false
     }
+
+
+
+    return true
+
+
+    //TODO these techniques were not very good... Great at filtering out FP, but really bad a filtering out TP also
+//    // Remove HTTP/1.1%0d%0a
+//    val noProbePath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}%0d%0a"), "") //remove CLRF to ensure it's not any other part of the payload that triggers interesting behaviour
+//    val confirmReq = probeReqResp.request().withPath(noProbePath)
+//
+//    val confirmReqResp = Utilities.montoyaApi.http().sendRequest(confirmReq)
+//
+//    if (serverStatus(confirmReqResp) == serverStatus(probeReqResp)) {
+//        //With removed CLRF injections... this should no way have made the same response...
+//        return false
+//    }
+//
+//    // Remove only HTTP/1.1
+//    val noHttpPath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}"), "") // remove anything except %0d%0a
+//    val confirmReqNoHttp = probeReqResp.request().withPath((noHttpPath))
+//
+//    val confirmReqRespNoHttp = Utilities.montoyaApi.http().sendRequest(confirmReqNoHttp)
+//
+//    if (serverStatus(confirmReqRespNoHttp) == serverStatus(probeReqResp)) {
+//        // If still the same then probably a WAF or FP
+//        return false
+//    }
     // If they still differ, good, time to report
     // Could follow up further here...Perhaps remove only HTTP/X.X to see if it is the %0d%0a that causes the issue... would work on most WAFs too since if %0d%0aHeader:%20value is the same response... it was likely WAF
-    return true
 }

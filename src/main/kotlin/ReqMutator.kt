@@ -51,6 +51,9 @@ class ReqMutator internal constructor() {
         headerBasedMutations.register("setCookie",  true, "")
         headerBasedMutations.register("upgrade", true, "")
         headerBasedMutations.register("expect-100", true, "")
+        headerBasedMutations.register("expect-100space", true, "")
+        headerBasedMutations.register("expect-100tab", true, "")
+        headerBasedMutations.register("expect-100wrap", true, "")
         headerBasedMutations.register("connection", true, "")
         for (i in 0 .. 4) {
             headerBasedMutations.register("max-forwardsTrace$i", true, "")
@@ -96,7 +99,7 @@ class ReqMutator internal constructor() {
 
         payload.name = technique
 
-        if (technique.startsWith("header|") && Utilities.globalSettings.getBoolean("Enable dodgy BPS diff")) {
+        if (technique.startsWith("header|") && Utilities.globalSettings.getBoolean("Enable fallback diff")) {
             var headerName = technique.split("|")[1]
             if (headerName[0].isLowerCase()) {headerName = headerName[0].toString().uppercase() + headerName.substring(1)} //uppercase the first letter of headers to be more... compliant...
             val endOfheaderName = headerName.substring(1)
@@ -249,8 +252,8 @@ class ReqMutator internal constructor() {
                 payload.expectedResponseMatches = listOf("101 Switching Protocols")
             }
             "basic..." -> { //Trying to come up with a method of universal detection... DID NOT work well at all
-                payload.benignRequest = baseRequest.withPath("/$basePath%250d%250a")
-                payload.probeRequest = baseRequest.withPath("/$basePath%0d%0a")
+                payload.benignRequest = baseRequest.withPath("/$basePath%2520%250d%250a")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20%0d%0a")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
             "httx" -> {
@@ -267,6 +270,21 @@ class ReqMutator internal constructor() {
             "expect-100" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45zpect:%20100-continue%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45xpect:%20100-continue%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("100 Continue")
+            }
+            "expect-100space" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45zpect%20:%20100-continue%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45xpect%20:%20100-continue%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("100 Continue")
+            }
+            "expect-100tab" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45zpect%09:%20100-continue%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45xpect%09:%20100-continue%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("100 Continue")
+            }
+            "expect-100wrap" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45zpect:%20%0d%0a%20100-continue%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0a%45xpect:%20%0d%0a%20100-continue%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("100 Continue")
             }
             "connection" -> {
@@ -298,9 +316,9 @@ class ReqMutator internal constructor() {
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
             "split0.9" -> {
-                payload.benignRequest = baseRequest.withPath("/$basePath%20%0d%0aX:%20x")
-                payload.probeRequest = baseRequest.withPath("/$basePath%20%0d%0a%0d%0aX:%20x")
-                payload.expectedResponseMatches = listOf("400 Bad Request")
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("NO_HEADERS")
             }
             "badHeaderName" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP%2f1.1%0d%0aX%58:%20x")
