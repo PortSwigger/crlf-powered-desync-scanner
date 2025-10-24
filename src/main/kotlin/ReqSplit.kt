@@ -41,6 +41,8 @@ internal class ReqSplit(name: String?) : Scan(name) {
         scanSettings.register("Enable follow up", true, "Follow up with a few more probes to better confirm true positives.")
         //scanSettings.register("include query-param in cachebusters", false, "Breaks things sometimes...") //Maybe this doesn't break things...
         scanSettings.register("Enable fallback diff", true, "Fallback to diffing <serverStatus> if expected match fails")
+        scanSettings.register("Encode-colons", true, ": -> %3a")
+        scanSettings.register("Encode-forward-slash", true, "/ -> %2f")
 
         scanSettings.importSettings(BurpExtender.configSettings)
         scanSettings.importSettings(headerBasedMutations)
