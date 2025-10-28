@@ -299,6 +299,8 @@ internal class ReqSplit(name: String?) : Scan(name) {
                             attemptRQP(baseRequest)
                         }
 
+                        
+
                         report("Request Splitting via $technique",
                             """
                             The application behaves in a manner that is consistent with HTTP Request Splitting...<br>

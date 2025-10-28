@@ -194,8 +194,8 @@ class ReqMutator internal constructor() {
                 payload.expectedResponseMatches = listOf("TIMEOUT")
             }
             "clTimeout" -> {
-                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43zntent-Length:%2010000%0d%0aX:%20x")
-                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43ontent-Length:%2010000%0d%0aX:%20x")
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43zntent-Length:%205%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43ontent-Length:%205%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("TIMEOUT")
             }
             "max-forwardsTimeout" -> {
