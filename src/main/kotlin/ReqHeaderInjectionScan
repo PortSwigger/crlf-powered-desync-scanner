@@ -9,14 +9,11 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.message.HttpRequestResponse
 import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.http.message.responses.analysis.AttributeType
-import jdk.internal.net.http.common.Log.requests
-import java.net.URI
-import java.net.URL
 import kotlin.random.Random
 
 
 //this is a basic scan check implementation
-internal class ReqSplit(name: String?) : Scan(name) {
+internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
     val interestingAttributes = setOf(
         AttributeType.STATUS_CODE,
@@ -43,8 +40,13 @@ internal class ReqSplit(name: String?) : Scan(name) {
         scanSettings.register("Enable fallback diff", true, "Fallback to diffing <serverStatus> if expected match fails")
         scanSettings.register("Encode-colons", true, ": -> %3a")
         scanSettings.register("Encode-forward-slash", true, "/ -> %2f")
+        scanSettings.register("Encode-period", true, ". -> %2e")
         scanSettings.register("Add cache buster", true, "Disable if you fancy a chance at a http1mustdie-style CDN desync")
         scanSettings.register("attempt poc", false, "Automatically follow up with RQP attempt")
+        scanSettings.register("Enable method override", false, "Enables method override")
+        scanSettings.register("method override", "POST", "Force this method")
+        scanSettings.register("Enable path override", false, "Enables path override")
+        scanSettings.register("path override", "/favicon.ico", "Force this base path")
         scanSettings.importSettings(BurpExtender.configSettings)
         scanSettings.importSettings(headerBasedMutations)
         scanSettings.importSettings(pathBasedMutations)
@@ -105,7 +107,7 @@ internal class ReqSplit(name: String?) : Scan(name) {
                 break
             }
 
-            val baseRequest: HttpRequest
+            var baseRequest: HttpRequest
 
             //Add OPTIONAL cache buster...
             if (Utilities.globalSettings.getBoolean("Add cache buster")) {
@@ -122,6 +124,11 @@ internal class ReqSplit(name: String?) : Scan(name) {
 
             lateinit var benignRequestResponse: HttpRequestResponse
             lateinit var probeRequestResponse: HttpRequestResponse
+
+            //Override method if we want...
+            if (Utilities.globalSettings.getBoolean("Enable method override")) {
+                baseRequest = baseRequest.withMethod(Utilities.globalSettings.getString("method override"))
+            }
 
             val probe = mutator.getProbe(baseRequest, technique)
 
