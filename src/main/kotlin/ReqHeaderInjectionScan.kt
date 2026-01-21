@@ -308,9 +308,9 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                         
 
-                        report("Request Splitting via $technique",
+                        report("Request Header Injection via $technique",
                             """
-                            The application behaves in a manner that is consistent with HTTP Request Splitting...<br>
+                            The application behaves in a manner that is consistent with Request Header Injection...<br>
                             $statusDiffString
                             """,
                             benignRequestResponse,
@@ -318,7 +318,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                         )
 
                         if (Utilities.globalSettings.getBoolean("Log issues to output")) {
-                            Utilities.out("Request Splitting via $technique at ${benignRequestResponse.request().url()}")
+                            Utilities.out("Request Header Injection via $technique at ${benignRequestResponse.request().url()}")
                         }
 
                         continue
@@ -371,14 +371,14 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 }
 
                 report(
-                    "Request Splitting via $technique - Dodgy", """
-                    The application behaves in a manner that is consistent with HTTP Request Splitting...Sort of:<br>
+                    "Request Header Injection via $technique - Dodgy", """
+                    The application behaves in a manner that is consistent with Request Header Injection...Sort of:<br>
                     $statusDiffString
                      """, benignRequestResponse, probeRequestResponse
                 )
 
                 if (Utilities.globalSettings.getBoolean("Log issues to output")) {
-                    Utilities.out("Request Splitting via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
+                    Utilities.out("Request Header Injection via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
                 }
 
                 continue
