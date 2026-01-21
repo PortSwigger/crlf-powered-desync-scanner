@@ -313,6 +313,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                             The application behaves in a manner that is consistent with Request Header Injection...<br>
                             $statusDiffString
                             """,
+                            baseReq,
                             benignRequestResponse,
                             probeRequestResponse
                         )
@@ -374,7 +375,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                     "Request Header Injection via $technique - Dodgy", """
                     The application behaves in a manner that is consistent with Request Header Injection...Sort of:<br>
                     $statusDiffString
-                     """, benignRequestResponse, probeRequestResponse
+                     """, baseReq, benignRequestResponse, probeRequestResponse
                 )
 
                 if (Utilities.globalSettings.getBoolean("Log issues to output")) {

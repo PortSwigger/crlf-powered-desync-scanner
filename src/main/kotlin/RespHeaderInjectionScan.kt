@@ -58,9 +58,9 @@ internal class RespHeaderInjectionScan(name: String?) : Scan(name) {
         }
 
         if (addSplit) {
-            report(name, description, checkRequestResponse, splitRequestResponse)
+            report(name, description, baseReq, checkRequestResponse, splitRequestResponse)
         } else {
-            report(name, description, checkRequestResponse)
+            report(name, description, baseReq, checkRequestResponse)
         }
 
         return mutableListOf<IScanIssue>()
