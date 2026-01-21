@@ -23,11 +23,11 @@ dependencies {
 }
 
 tasks.jar {
-    manifest {
+    manifest {6
         attributes(
-            "Implementation-Title" to "http-stream-splitter",
+            "Implementation-Title" to "http-header-injector",
             "Implementation-Version" to version,
-            "Burp-Extension-Name" to "http-stream-splitter",
+            "Burp-Extension-Name" to "http-header-injector",
             "Burp-Extension-Version" to version,
             "Burp-Extension-Suite-Min-Version" to "2024.10.0",
             "Burp-Extension-Suite-Max-Version" to "2025.99.99"
