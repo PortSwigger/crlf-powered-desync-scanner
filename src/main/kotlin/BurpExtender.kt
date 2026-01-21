@@ -3,7 +3,6 @@ package burp
 import burp.api.montoya.BurpExtension
 import burp.api.montoya.MontoyaApi
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ThreadPoolExecutor
 
 
 class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
@@ -33,7 +32,8 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
         callbacks.registerExtensionStateListener(this);
 
         //Scans
-        ReqSplit("Request Splitting Scan")
+        ReqHeaderInjectionScan("Request Header Injection probe")
+        RespHeaderInjectionScan("Response Header Injection probe")
 
 
 

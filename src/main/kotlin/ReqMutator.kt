@@ -22,7 +22,7 @@ class ReqMutator internal constructor() {
         protocolBasedMutations.register("HvsX", true, "/%20X vs /%20H")
         protocolBasedMutations.register("HTTP/13.37", true, "/%20HTTP/1.1%0D%0AX:%20x vs /%20HTTP/13.37%0D%0AX:%20x")
         protocolBasedMutations.register("http/0.9", true, "")
-        protocolBasedMutations.register("http/null", true, "")
+        protocolBasedMutations.register("http/null", false, "")
         protocolBasedMutations.register("split", true, "End request without host header")
         //protocolBasedMutations.register("basic...", false, "Doesn't work")
         protocolBasedMutations.register("httx", true, "")
@@ -30,7 +30,8 @@ class ReqMutator internal constructor() {
         //protocolBasedMutations.register("http/1.0", true, "") //Failed terribly
         //protocolBasedMutations.register("HTTP/13.37 - akamai", true, "") //Fails
         //protocolBasedMutations.register("HTTP//13.37", true, "") //Failed
-        protocolBasedMutations.register("split0.9", true, "")
+        protocolBasedMutations.register("split0.9", false, "")
+        protocolBasedMutations.register("javaHTTP/13.37",true, "")
 
         // Header based mutations
         headerBasedMutations.register("dupeHost", true, "")
@@ -45,17 +46,19 @@ class ReqMutator internal constructor() {
         headerBasedMutations.register("range-invalid", true,"")
         headerBasedMutations.register("max-forwardsTimeout", true,"")
         headerBasedMutations.register("ifMatch", true, "")
-        headerBasedMutations.register("responseHeaderInjection", true, "")
+        headerBasedMutations.register("responseHeaderInjection", false, "") //very FP prone
         headerBasedMutations.register("clNoHost", true, "")
         headerBasedMutations.register("teUserAgentTimeout", true, "")
         headerBasedMutations.register("headerSpace", true, "")
         headerBasedMutations.register("authorization",  true, "")
         headerBasedMutations.register("setCookie",  true, "")
         headerBasedMutations.register("upgrade", true, "")
+        headerBasedMutations.register("upgradeNoConnection", true, "")
         headerBasedMutations.register("expect-100", true, "")
         headerBasedMutations.register("expect-100space", true, "")
         headerBasedMutations.register("expect-100tab", true, "")
         headerBasedMutations.register("expect-100wrap", true, "")
+        headerBasedMutations.register("expect-100body", true, "")
         headerBasedMutations.register("connection", true, "")
         for (i in 0 .. 4) {
             headerBasedMutations.register("max-forwardsTrace$i", true, "")
@@ -67,6 +70,7 @@ class ReqMutator internal constructor() {
         headerBasedMutations.register("headerTab", true, "")
         headerBasedMutations.register("headerWrap", true, "")
         headerBasedMutations.register("contentType-invalid", true, "")
+        headerBasedMutations.register("expectHEAD", true, "")
         //mutations.register("headerSemiColon", false, "") Extremely FP prone... A lot of servers just reject ";" full stop
 
         // Path based mutations
@@ -97,6 +101,10 @@ class ReqMutator internal constructor() {
             basePath = baseRequest.pathWithoutQuery().replaceFirst("/", "")
         }
 
+        if  (Utilities.globalSettings.getBoolean("Enable path override")) {
+            basePath = Utilities.globalSettings.getString("path override").replaceFirst("/", "") //remove / prefix if there
+        }
+
         val payload: Payload = Payload()
 
         payload.name = technique
@@ -117,6 +125,7 @@ class ReqMutator internal constructor() {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20X")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20H")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
+                //todo add payload.potentialBadChar to allow dynamic follow-up that tries just that char without CRLF...
             }
             "HTTP/13.37" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
@@ -168,6 +177,7 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%52ange:%20bytes=0-abcde%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("416 Range Not Satisfiable")
             }
+            //todo Add range-valid-multi-part and expect Content-Type: multipart/*
             "ifMatch" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49z-Match:%20%22this-etag-is-definitely-wrong%22%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49f-Match:%20%22this-etag-is-definitely-wrong%22%0d%0aX:%20x")
@@ -248,9 +258,14 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("1337 No response headers received")
             }
-            "upgrade" -> { //Still need to actually run this one fully....
+            "upgrade" -> { //Still need to actually run this one fully.... Trying now, might wanna try without the connection header also...
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43onnection:%20zpgrade%0d%0azpgrade:%20websocket%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43onnection:%20upgrade%0d%0aUpgrade:%20websocket%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("101 Switching Protocols")
+            }
+            "upgradeNoConnection" -> { //Still need to actually run this one fully.... Trying now, might wanna try without the connection header also...
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0azpgrade:%20websocket%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aUpgrade:%20websocket%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("101 Switching Protocols")
             }
             "basic..." -> { //Trying to come up with a method of universal detection... DID NOT work well at all
@@ -287,6 +302,12 @@ class ReqMutator internal constructor() {
             "expect-100wrap" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45zpect:%20%0d%0a%20100-continue%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45xpect:%20%0d%0a%20100-continue%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("100 Continue")
+            }
+            //TODO add  expect with request body as that is sometimes required in order to get a 100-continue response...!
+            "expect-100body" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45zpect:%20100-continue%0d%0aX:%20x").withBody("x=y").withMethod("POST")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45xpect:%20100-continue%0d%0aX:%20x").withBody("x=y").withMethod("POST")
                 payload.expectedResponseMatches = listOf("100 Continue")
             }
             "connection" -> {
@@ -367,8 +388,16 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.0%0d%0a%54ransfer-Encoding:%20chunkedd%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("200 OK") //We expect the probe to return the same as the base request really. benign should trigger a 501 and probe should not (since TE isn't supported by HP1.0
             }
-    	    //Something to do with connection header... If we remove a required header like "host" or similar... trying now
-            //Something to do with the akamai talk on unicode... `%e5%98%8d%e5%98%8a == %0d%0a` somehow...
+            "javaHTTP/13.37" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%c4%8d%c4%8aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/13.37%c4%8d%c4%8aX:%20x")
+                payload.expectedResponseMatches = listOf("505 HTTP Version Not Supported")
+            }
+            "expectHEAD" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45zpect:%20100-continue%0d%0a%43ontent-Length:%207%0d%0aX:%20x").withMethod("HEAD")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45xpect:%20100-continue%0d%0a%43ontent-Length:%207%0d%0aX:%20x").withMethod("HEAD")
+                payload.expectedResponseMatches = listOf("TIMEOUT")
+            }
 
             //TO BYPASS AKAMAI we can just URL encode the first letter of the header... \__:D__/
         }
@@ -380,13 +409,23 @@ class ReqMutator internal constructor() {
         var probeEncodedPath = probePath
 
         if (Utilities.globalSettings.getBoolean("Encode-colons")) {
-            benignEncodedPath = benignEncodedPath.replace(":", "%3a")
-            probeEncodedPath = probeEncodedPath.replace(":", "%3a")
+            benignEncodedPath = encodePathAfterBasePath(benignEncodedPath, basePath, ":", "%3a")
+            probeEncodedPath = encodePathAfterBasePath(probeEncodedPath, basePath, ":", "%3a")
         }
 
         if (Utilities.globalSettings.getBoolean("Encode-forward-slash")) {
-            benignEncodedPath = benignEncodedPath.replace("/", "%2f").replaceFirst("%2f", "/")
-            probeEncodedPath = probeEncodedPath.replace("/", "%2f").replaceFirst("%2f", "/")
+
+            // If the request is just towards / then we want to treat "/" as the basePath here
+            if (basePath == "") {
+                basePath = "/"
+            }
+            benignEncodedPath = encodePathAfterBasePath(benignEncodedPath, basePath, "/", "%2f")
+            probeEncodedPath = encodePathAfterBasePath(probeEncodedPath, basePath, "/", "%2f")
+        }
+
+        if (Utilities.globalSettings.getBoolean("Encode-period")) {
+            benignEncodedPath = encodePathAfterBasePath(benignEncodedPath, basePath, ".", "%2e")
+            probeEncodedPath = encodePathAfterBasePath(probeEncodedPath, basePath, ".", "%2e")
         }
 
         //replace path with encoded path
@@ -394,6 +433,16 @@ class ReqMutator internal constructor() {
         payload.probeRequest = payload.probeRequest!!.withPath(probeEncodedPath)
 
         return payload
+    }
+
+    private fun encodePathAfterBasePath(path: String, basePath: String, charToEncode: String, encodedChar: String): String {
+        var offset = path.indexOf(basePath) + basePath.length
+        if (offset < basePath.length) { // if basePath not found or empty
+            offset = 0
+        }
+        val prefix = path.substring(0, offset)
+        val suffix = path.substring(offset)
+        return prefix + suffix.replace(charToEncode, encodedChar)
     }
 
 }
