@@ -27,6 +27,8 @@ class ReqMutator internal constructor() {
         //protocolBasedMutations.register("basic...", false, "Doesn't work")
         protocolBasedMutations.register("httx", true, "")
         protocolBasedMutations.register("tunnel", true, "")
+        protocolBasedMutations.register("expect-tunnel", true, "") //Worked on target's we already knew about. still cool
+        //protocolBasedMutations.register("expect-range-tunnel", true) //TODO Is this worth implementing?
         //protocolBasedMutations.register("http/1.0", true, "") //Failed terribly
         //protocolBasedMutations.register("HTTP/13.37 - akamai", true, "") //Fails
         //protocolBasedMutations.register("HTTP//13.37", true, "") //Failed
@@ -77,11 +79,13 @@ class ReqMutator internal constructor() {
         pathBasedMutations.register("robots", true, "Inspired by the CL.0 scan check")
         pathBasedMutations.register("sitemap", true, "Inspired by the CL.0 scan check")
         pathBasedMutations.register("favicon", true, "Inspired by the CL.0 scan check")
+        pathBasedMutations.register("pathTraversal", true, "")
 
         //Smuggle based mutations?
         smuggleBasedMutations.register("CL.TE-body-timeout", true, "Inspired by CL.TE detection")
         smuggleBasedMutations.register("TE.CL-body-timeout", true, "Inspired by TE.CL detection")
 
+        //TODO /%20HTTP/1.1%0d%0aX:%20x vs /%252e%252e%252f%20HTTP/1.1%0d%0aX:%20x
 
 
 
@@ -284,6 +288,11 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%48ost:%20" + baseRequest.httpService().host() + "%0d%0a%0d%0aTRACE%20%2f%20HTTP/1.1%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("HTTP/1", "405 Not Allowed")
             }
+            "expect-tunnel" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%48ost:%20" + baseRequest.httpService().host() + "%0d%0a%45xpect:%20100-Continue%0d%0a%0d%0aTRACE%20/%20HTTP/1.1%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%48ost:%20" + baseRequest.httpService().host() + "%0d%0a%45zpect:%20100-Continue%0d%0a%0d%0aTRACE%20/%20HTTP/1.1%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("HTTP/1", "405 Not Allowed")
+            }
             "expect-100" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45zpect:%20100-continue%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45xpect:%20100-continue%0d%0aX:%20x")
@@ -397,6 +406,17 @@ class ReqMutator internal constructor() {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45zpect:%20100-continue%0d%0a%43ontent-Length:%207%0d%0aX:%20x").withMethod("HEAD")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45xpect:%20100-continue%0d%0a%43ontent-Length:%207%0d%0aX:%20x").withMethod("HEAD")
                 payload.expectedResponseMatches = listOf("TIMEOUT")
+            }
+            "pathTraversal" -> {
+                if (basePath.endsWith("/")) {
+                    payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
+                    payload.probeRequest = baseRequest.withPath("/$basePath%252e%252e%252f%20HTTP/1.1%0d%0aX:%20x")
+                    payload.expectedResponseMatches = listOf("400 Bad Request")
+                } else {
+                    payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
+                    payload.probeRequest = baseRequest.withPath("/$basePath%252f%252e%252e%252f%20HTTP/1.1%0d%0aX:%20x")
+                    payload.expectedResponseMatches = listOf("400 Bad Request")
+                }
             }
 
             //TO BYPASS AKAMAI we can just URL encode the first letter of the header... \__:D__/
