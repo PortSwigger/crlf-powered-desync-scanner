@@ -7,6 +7,7 @@ import burp.ReqMutator.Companion.protocolBasedMutations
 import burp.ReqMutator.Companion.smuggleBasedMutations
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.message.HttpRequestResponse
+import burp.api.montoya.http.message.params.HttpParameter
 import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.http.message.responses.analysis.AttributeType
 import kotlin.random.Random
@@ -92,13 +93,13 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
             }
         }
 
-        var hpMode = HttpMode.AUTO
+        var forceHP1 = false
 
 
         if (Utilities.isHTTP2(baseReq)) {
-            hpMode = HttpMode.HTTP_2
+            forceHP1 = false
         } else {
-            hpMode = HttpMode.HTTP_1
+            forceHP1 = true
         }
 
         // for (permutation in permutations) {} //As per the PDS from http1mustdie...
@@ -109,21 +110,25 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
             var baseRequest: HttpRequest
 
+            // Move over to BulkScans James' MontoyaRequestResponse class
+            val base = Utilities.buildMontoyaResp(request(service, baseReq))
+
+
             //Add OPTIONAL cache buster...
             if (Utilities.globalSettings.getBoolean("Add cache buster")) {
-                baseRequest = Utilities.buildMontoyaReq(Utilities.addCacheBuster(baseReq, Utilities.generateCanary()), service)
+                baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
             } else {
-                baseRequest = Utilities.buildMontoyaReq(baseReq, service)
+                baseRequest = Utilities.buildMontoyaResp(request(service, baseReq)).request()
             }
 
             var currentStatusDiff = ""
             var previousStatusDiff = ""
 
-            lateinit var previousBenignRequestResponse: HttpRequestResponse
-            lateinit var previousProbeRequestResponse: HttpRequestResponse
+            lateinit var previousBenignRequestResponse: MontoyaRequestResponse
+            lateinit var previousProbeRequestResponse: MontoyaRequestResponse
 
-            lateinit var benignRequestResponse: HttpRequestResponse
-            lateinit var probeRequestResponse: HttpRequestResponse
+            lateinit var benignRequestResponse: MontoyaRequestResponse
+            lateinit var probeRequestResponse: MontoyaRequestResponse
 
             //Override method if we want...
             if (Utilities.globalSettings.getBoolean("Enable method override")) {
@@ -140,13 +145,13 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 }
 
                 val sendBenignRequest = {
-                    benignRequestResponse = Utilities.montoyaApi.http().sendRequest(probe.benignRequest, hpMode)
+                    benignRequestResponse = request(probe.benignRequest, forceHP1)
 
                     !responseHasErrors(benignRequestResponse) //indicate failure
                 }
 
                 val sendProbeRequest = {
-                    probeRequestResponse = Utilities.montoyaApi.http().sendRequest(probe.probeRequest, hpMode)
+                    probeRequestResponse = request(probe.probeRequest, forceHP1)
 
                     !(responseHasErrors(probeRequestResponse) && !technique.contains(
                         "timeout",
@@ -173,13 +178,13 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 if (i != 1) { //Skip on first run...
 
                     //Benign
-                    if (serverStatus(benignRequestResponse) != serverStatus(previousBenignRequestResponse)) {
+                    if (benignRequestResponse.serverStatus() != previousBenignRequestResponse.serverStatus()) {
                         currentStatusDiff = ""
                         break
                     }
 
                     //Probe
-                    if (serverStatus(probeRequestResponse) != serverStatus(previousProbeRequestResponse)) {
+                    if (probeRequestResponse.serverStatus() != previousProbeRequestResponse.serverStatus()) {
                         currentStatusDiff = ""
                         break
                     }
@@ -191,15 +196,15 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
 
                 //If no difference in responses... then give up
-                if (serverStatus(probeRequestResponse) == serverStatus(benignRequestResponse)) {
+                if (probeRequestResponse.serverStatus() == benignRequestResponse.serverStatus()) {
                     currentStatusDiff = ""
                     break
                 }
 
-                currentStatusDiff = serverStatus(benignRequestResponse) + "|" + serverStatus(probeRequestResponse)
+                currentStatusDiff = "${benignRequestResponse.serverStatus()}|${probeRequestResponse.serverStatus()}"
 
 
-                //If after the current repeat our <server><status> strings don't match... somethings inconsistent regardless of probe
+                //If after the current repeat our <server><status> strings don't match... something is inconsistent regardless of probe
                 if (i != 1 && previousStatusDiff != currentStatusDiff) {
                     //Make the attributes empty so we can prevent reporting
                     currentStatusDiff = ""
@@ -235,15 +240,6 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 if (!technique.contains("timeout", true)) {
                     probe.expectedResponseMatches.forEach {
                         match ->
-                            //Check for generic matches...
-//                            if (match == "TIMEOUT") {
-//                                if (!probeRequestResponse.hasResponse()) {
-//                                    numberOfMatches += 1
-//                                }
-//                                if (!benignRequestResponse.hasResponse()) {
-//                                    numberOfMatches = 0
-//                                }
-//                            }
                             if (match == "NO_HEADERS") {
                                 if (probeRequestResponse.response().statusCode() == "0".toShort()) {
                                     numberOfMatches += 1
@@ -252,7 +248,6 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                                     numberOfMatches = 0
                                 }
                             } else {
-
                                 if (probeRequestResponse.response().contains(match, true)) {
                                     numberOfMatches += 1
                                 }
@@ -266,31 +261,20 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                         // todo Validate this further by removing the parts that should actually make this work...
                         // todo launch an optional attack for quickly check for desync via RQP or similar? :thinking:
-                        if (!confirmedVulnerable(probeRequestResponse, technique) && Utilities.globalSettings.getBoolean("Enable follow up")) {
-                            // followUp tells us it's a FP
+                        if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
+                            // Follow up no enabled, skip
                             continue
                         }
 
-                        var statusDiffString = """
-                            <table>
-                                <tr>
-                                    <td><b>Base<b></td>
-                                    <td><b>Probe<b></td>
-                                </tr>
-                        """.trimIndent()
-
-                            statusDiffString += """
-                            <tr>
-                                <td>${currentStatusDiff.split("|")[0]}</td>
-                                <td>${currentStatusDiff.split("|")[1]}</td>
-                            </tr>
-                        """.trimIndent()
-
-                        statusDiffString += "</table>"
+                        // No if it is enabled, perform  follow up!
+                        if (!confirmedVulnerable(probeRequestResponse, technique)) {
+                            // If confirmedVulnerable comes up false... skip
+                            continue
+                        }
 
                         //Fix broken responses... (responses without status codes...)
                         if (probeRequestResponse.response().statusCode() == "0".toShort()) {
-                            probeRequestResponse = HttpRequestResponse.httpRequestResponse(probeRequestResponse.request(), probeRequestResponse.response().withStatusCode("1337".toShort()))
+                            probeRequestResponse = MontoyaRequestResponse(HttpRequestResponse.httpRequestResponse(probeRequestResponse.request(), probeRequestResponse.response().withStatusCode("1337".toShort())))
                         }
 
                         // Attempt poc (before report otherwise our logic  breaks...)
@@ -310,8 +294,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                         report("Request Header Injection via $technique",
                             """
-                            The application behaves in a manner that is consistent with Request Header Injection...<br>
-                            $statusDiffString
+                            The application behaves in a manner that is consistent with Request Header Injection...
                             """,
                             baseReq,
                             benignRequestResponse,
@@ -336,27 +319,16 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 }
 
                 // todo Validate this further by removing the parts that should actually make this work...
-                if (!confirmedVulnerable(probeRequestResponse, technique) && Utilities.globalSettings.getBoolean("Enable follow up")) {
-                    // followUp tells us it's a FP
+                if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
+                    // Follow up no enabled, skip
                     continue
                 }
 
-                var statusDiffString = """
-                    <table>
-                        <tr>
-                            <td><b>Base<b></td>
-                            <td><b>Probe<b></td>
-                        </tr>
-                """.trimIndent()
-
-                statusDiffString += """
-                    <tr>
-                        <td>${currentStatusDiff.split("|")[0]}</td>
-                        <td>${currentStatusDiff.split("|")[1]}</td>
-                    </tr>
-                """.trimIndent()
-
-                statusDiffString += "</table>"
+                // No if it is enabled, perform  follow up!
+                if (!confirmedVulnerable(probeRequestResponse, technique)) {
+                    // If confirmedVulnerable comes up false... skip
+                    continue
+                }
 
                 // Attempt poc (before report otherwise our logic  breaks...)
                 if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") || Utilities.globalSettings.getBoolean("skip flagged hosts")) {
@@ -373,9 +345,8 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                 report(
                     "Request Header Injection via $technique - Dodgy", """
-                    The application behaves in a manner that is consistent with Request Header Injection...Sort of:<br>
-                    $statusDiffString
-                     """, baseReq, benignRequestResponse, probeRequestResponse
+                    The application behaves in a manner that is consistent with Request Header Injection...Sort of
+                    """, baseReq, benignRequestResponse, probeRequestResponse
                 )
 
                 if (Utilities.globalSettings.getBoolean("Log issues to output")) {
@@ -414,12 +385,12 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
         var previousServerStatus = ""
 
         for (i in 0..100) {
-            val attackRequestResponse = Utilities.montoyaApi.http().sendRequest(attackRequest)
+            val attackRequestResponse = request(attackRequest, false)
             if (i == 0) {
-                previousServerStatus = serverStatus(attackRequestResponse)
+                previousServerStatus = attackRequestResponse.serverStatus().toString()
                 continue
             }
-            val currentServerStatus = serverStatus(attackRequestResponse)
+            val currentServerStatus = attackRequestResponse.serverStatus().toString()
 
             if (previousServerStatus != currentServerStatus) {
                 reportToOrganiser("RQP!?!?!?!\r\n$previousServerStatus|$currentServerStatus", attackRequestResponse)
@@ -449,52 +420,47 @@ fun fixMissingStatuscode(requestResponse: HttpRequestResponse): HttpRequestRespo
     return fixedRequestResponse
 }
 
-fun serverStatus(reqResp: HttpRequestResponse): String {
-    if (!reqResp.hasResponse()) {
-        return "TIMEOUT"
-    }
+// Moved over to BulkScan's built-in one
+//fun serverStatus(reqResp: HttpRequestResponse): String {
+//    if (!reqResp.hasResponse()) {
+//        return "TIMEOUT"
+//    }
+//
+//    val resp = reqResp.response()
+//
+//    val serverHeaderValue: String
+//    if (resp.hasHeader("Server")) {
+//        serverHeaderValue = resp.headerValue("Server")
+//    } else {
+//        serverHeaderValue = ""
+//    }
+//    if (resp.statusCode() == "0".toShort()) {
+//        return resp.statusCode().toString()
+//    } else {
+//        return serverHeaderValue + resp.statusCode().toString() // E.g. nginx505
+//    }
+//    // serverStatus() = "0" if no sheader or status code or it'll just be 404 if no sheader or just nginx0 if server header but no status code
+//}
 
-    val resp = reqResp.response()
-
-    val serverHeaderValue: String
-    if (resp.hasHeader("Server")) {
-        serverHeaderValue = resp.headerValue("Server")
-    } else {
-        serverHeaderValue = ""
-    }
-    if (resp.statusCode() == "0".toShort()) {
-        return resp.statusCode().toString()
-    } else {
-        return serverHeaderValue + resp.statusCode().toString() // E.g. nginx505
-    }
-    // serverStatus() = "0" if no sheader or status code or it'll just be 404 if no sheader or just nginx0 if server header but no status code
-}
-
-fun confirmedVulnerable(probeReqResp: HttpRequestResponse, technique: String): Boolean {
+fun confirmedVulnerable(probeReqResp: MontoyaRequestResponse, technique: String): Boolean {
     //Filter out ones that will break.... robots.txt?anything will of course work so...
     if (technique in listOf("robots", "sitemap", "favicon")) {
         return true
     }
 
+    val confirmReqResp = Scan.request(probeReqResp.request().withPath(probeReqResp.request().pathWithoutQuery().replace("%20", "a?%20")), false) //the extra a is a BUG I think
 
-    //Add %3f after the path?
-    val withQueryProbePath = probeReqResp.request().pathWithoutQuery().replaceFirst("%20", "?%20")
-    val withQueryProbeReq = probeReqResp.request().withPath(withQueryProbePath)
-    val confirmReqResp = Utilities.montoyaApi.http().sendRequest(withQueryProbeReq)
-
-    if (serverStatus(confirmReqResp) == serverStatus(probeReqResp)) {
-        //If we get the same response haveing made the entire path a query component... it's a FP
+    if (confirmReqResp.serverStatus() == probeReqResp.serverStatus()) {
+        //If we get the same response having made the entire path a query component... it's a FProbeReqResp.request().withPath()
         return false
     }
 
-    val confirmReqResp2 = Utilities.montoyaApi.http().sendRequest(withQueryProbeReq.withPath(withQueryProbePath.replaceFirst("?%20", "%3f%20")))
+    val confirmReqResp2 = Scan.request(probeReqResp.request().withPath(probeReqResp.request().pathWithoutQuery().replaceFirst("%20", "%3f%20")), false)
 
-    if (serverStatus(confirmReqResp2) != serverStatus(probeReqResp)) {
-        //if encoding the query then produces the a different serverStatus it's a FP... nginx should be fine with this
+    if (confirmReqResp2.serverStatus() != probeReqResp.serverStatus()) {
+        //if encoding the query then produces a different serverStatus compared to the probe it's a FP... nginx should be fine with this
         return false
     }
-
-
 
     return true
 
