@@ -30,7 +30,7 @@ tasks.jar {
             "Burp-Extension-Name" to "http-header-injector",
             "Burp-Extension-Version" to version,
             "Burp-Extension-Suite-Min-Version" to "2024.10.0",
-            "Burp-Extension-Suite-Max-Version" to "2025.99.99"
+            "Burp-Extension-Suite-Max-Version" to "2026.99.99"
         )
     }
 
