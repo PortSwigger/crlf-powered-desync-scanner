@@ -110,10 +110,6 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
             var baseRequest: HttpRequest
 
-            // Move over to BulkScans James' MontoyaRequestResponse class
-            val base = Utilities.buildMontoyaResp(request(service, baseReq))
-
-
             //Add OPTIONAL cache buster...
             if (Utilities.globalSettings.getBoolean("Add cache buster")) {
                 baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
