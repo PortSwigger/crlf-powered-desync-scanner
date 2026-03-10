@@ -73,6 +73,7 @@ class ReqMutator internal constructor() {
         headerBasedMutations.register("headerWrap", true, "")
         headerBasedMutations.register("contentType-invalid", true, "")
         headerBasedMutations.register("expectHEAD", true, "")
+        headerBasedMutations.register("range-multi", true, "")
         //mutations.register("headerSemiColon", false, "") Extremely FP prone... A lot of servers just reject ";" full stop
 
         // Path based mutations
@@ -181,7 +182,11 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%52ange:%20bytes=0-abcde%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("416 Range Not Satisfiable")
             }
-            //todo Add range-valid-multi-part and expect Content-Type: multipart/*
+            "range-multi" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%52znge:%20bytes=1-2,4-5%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%52ange:%20bytes=1-2,4-5%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("Content-Type: multipart/")
+            }
             "ifMatch" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49z-Match:%20%22this-etag-is-definitely-wrong%22%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49f-Match:%20%22this-etag-is-definitely-wrong%22%0d%0aX:%20x")
@@ -313,7 +318,6 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45xpect:%20%0d%0a%20100-continue%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("100 Continue")
             }
-            //TODO add  expect with request body as that is sometimes required in order to get a 100-continue response...!
             "expect-100body" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45zpect:%20100-continue%0d%0aX:%20x").withBody("x=y").withMethod("POST")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%45xpect:%20100-continue%0d%0aX:%20x").withBody("x=y").withMethod("POST")
