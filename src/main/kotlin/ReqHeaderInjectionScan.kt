@@ -102,33 +102,38 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
             forceHP1 = true
         }
 
+        var baseRequest: HttpRequest
+
+        //Add OPTIONAL cache buster...
+        if (Utilities.globalSettings.getBoolean("Add cache buster")) {
+            baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
+        } else {
+            baseRequest = Utilities.buildMontoyaResp(request(service, baseReq)).request()
+        }
+
+        var currentStatusDiff = ""
+        var previousStatusDiff = ""
+
+        lateinit var previousBenignRequestResponse: MontoyaRequestResponse
+        lateinit var previousProbeRequestResponse: MontoyaRequestResponse
+
+        lateinit var benignRequestResponse: MontoyaRequestResponse
+        lateinit var probeRequestResponse: MontoyaRequestResponse
+
+        //Override method if we want...
+        if (Utilities.globalSettings.getBoolean("Enable method override")) {
+            baseRequest = baseRequest.withMethod(Utilities.globalSettings.getString("method override"))
+        }
+
         // for (permutation in permutations) {} //As per the PDS from http1mustdie...
         for (technique in enabledMutations) {
             if (Utilities.unloaded.get()) {
                 break
             }
 
-            var baseRequest: HttpRequest
-
-            //Add OPTIONAL cache buster...
-            if (Utilities.globalSettings.getBoolean("Add cache buster")) {
-                baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
-            } else {
-                baseRequest = Utilities.buildMontoyaResp(request(service, baseReq)).request()
-            }
-
-            var currentStatusDiff = ""
-            var previousStatusDiff = ""
-
-            lateinit var previousBenignRequestResponse: MontoyaRequestResponse
-            lateinit var previousProbeRequestResponse: MontoyaRequestResponse
-
-            lateinit var benignRequestResponse: MontoyaRequestResponse
-            lateinit var probeRequestResponse: MontoyaRequestResponse
-
-            //Override method if we want...
-            if (Utilities.globalSettings.getBoolean("Enable method override")) {
-                baseRequest = baseRequest.withMethod(Utilities.globalSettings.getString("method override"))
+            //Skip the rest of the techniques if we're told too (when a valid report was found)
+            if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") && BulkScan.hostsToSkip.containsKey(service.host)) {
+                break
             }
 
             val probe = mutator.getProbe(baseRequest, technique)
@@ -301,6 +306,10 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                             Utilities.out("Request Header Injection via $technique at ${benignRequestResponse.request().url()}")
                         }
 
+                        if (Utilities.globalSettings.getBoolean("skip vulnerable hosts")) {
+                            BulkScan.hostsToSkip.putIfAbsent(service.host, true)
+                        }
+
                         continue
                     }
                 }
@@ -349,6 +358,9 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                     Utilities.out("Request Header Injection via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
                 }
 
+                if (Utilities.globalSettings.getBoolean("skip vulnerable hosts")) {
+                    BulkScan.hostsToSkip.putIfAbsent(service.host, true)
+                }
                 continue
             }
         }
