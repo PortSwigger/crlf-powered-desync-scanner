@@ -20,6 +20,7 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
     override fun initialize(api: MontoyaApi) {
         Utilities.montoyaApi = api
         BulkUtilities.registerContextMenu()
+        api.http().registerHttpHandler(LiveScan())
     }
 
 
