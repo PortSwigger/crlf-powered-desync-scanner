@@ -76,6 +76,8 @@ class ReqMutator internal constructor() {
         headerBasedMutations.register("range-multi", true, "")
         //mutations.register("headerSemiColon", false, "") Extremely FP prone... A lot of servers just reject ";" full stop
         headerBasedMutations.register("negotiate-valid", true, "")
+        headerBasedMutations.register("ifNoneMatch", true, "")
+        headerBasedMutations.register("ifModifiedSince", true, "")
 
         // Path based mutations
         pathBasedMutations.register("robots", true, "Inspired by the CL.0 scan check")
@@ -428,6 +430,16 @@ class ReqMutator internal constructor() {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4exgotiate:%20trans%0d%0aX:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4eegotiate:%20trans%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("300 Multiple Choices")
+            }
+            "ifNoneMatch" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49z-None-Match:%20*%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49f-None-Match:%20*%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("304 Not Modified")
+            }
+            "ifModifiedSince" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49z-Modified-Since:%20Sat,%2001%20Jan%202050%2000%3a00%3a00%20GMT%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%49f-Modified-Since:%20Sat,%2001%20Jan%202050%2000%3a00%3a00%20GMT%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("304 Not Modified")
             }
 
             //TO BYPASS AKAMAI we can just URL encode the first letter of the header... \__:D__/
