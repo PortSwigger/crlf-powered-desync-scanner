@@ -426,7 +426,7 @@ class ReqMutator internal constructor() {
             }
             "negotiate-valid" -> {
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4exgotiate:%20trans%0d%0aX:%20x")
-                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4exgotiate:%20trans%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4eegotiate:%20trans%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("300 Multiple Choices")
             }
 
