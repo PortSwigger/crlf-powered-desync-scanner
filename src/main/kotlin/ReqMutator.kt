@@ -66,7 +66,7 @@ class ReqMutator internal constructor() {
             headerBasedMutations.register("max-forwardsTrace$i", true, "")
             headerBasedMutations.register("max-forwardsOptions$i", true, "")
         }
-        headerBasedMutations.register("badHeaderName", true, "")
+        headerBasedMutations.register("badHeaderName", false, "")
         headerBasedMutations.register("clinvalid", true, "")
         headerBasedMutations.register("accept", true, "")
         headerBasedMutations.register("headerTab", true, "")
@@ -75,6 +75,7 @@ class ReqMutator internal constructor() {
         headerBasedMutations.register("expectHEAD", true, "")
         headerBasedMutations.register("range-multi", true, "")
         //mutations.register("headerSemiColon", false, "") Extremely FP prone... A lot of servers just reject ";" full stop
+        headerBasedMutations.register("negotiate-valid", true, "")
 
         // Path based mutations
         pathBasedMutations.register("robots", true, "Inspired by the CL.0 scan check")
@@ -328,6 +329,7 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43onnection:%20Host%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
+            //TODO Should we NOT smuggle the max forwards header... and stead just see if adding max fowards breaks things?
             "max-forwardsTrace"+technique[technique.length - 1] -> {
                 val maxForwardsValue = technique[technique.length - 1]
                 val canary = Utilities.montoyaApi.utilities().randomUtils().randomString(8)
@@ -356,7 +358,7 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("NO_HEADERS")
             }
-            "badHeaderName" -> {
+            "badHeaderName" -> { // Produces a lot of FP
                 payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX%58:%20x")
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX%5c:%20x")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
@@ -412,7 +414,7 @@ class ReqMutator internal constructor() {
                 payload.expectedResponseMatches = listOf("TIMEOUT")
             }
             "pathTraversal" -> {
-                if (basePath.endsWith("/")) {
+                if (basePath.endsWith("/")) { //not great...
                     payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0aX:%20x")
                     payload.probeRequest = baseRequest.withPath("/$basePath%252e%252e%252f%20HTTP/1.1%0d%0aX:%20x")
                     payload.expectedResponseMatches = listOf("400 Bad Request")
@@ -421,6 +423,11 @@ class ReqMutator internal constructor() {
                     payload.probeRequest = baseRequest.withPath("/$basePath%252f%252e%252e%252f%20HTTP/1.1%0d%0aX:%20x")
                     payload.expectedResponseMatches = listOf("400 Bad Request")
                 }
+            }
+            "negotiate-valid" -> {
+                payload.benignRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4exgotiate:%20trans%0d%0aX:%20x")
+                payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%4exgotiate:%20trans%0d%0aX:%20x")
+                payload.expectedResponseMatches = listOf("300 Multiple Choices")
             }
 
             //TO BYPASS AKAMAI we can just URL encode the first letter of the header... \__:D__/

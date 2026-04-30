@@ -136,6 +136,8 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 break
             }
 
+            //TODO cache buster should be added here... / updated on every request
+
             val probe = mutator.getProbe(baseRequest, technique)
 
 
