@@ -427,28 +427,6 @@ fun fixMissingStatuscode(requestResponse: HttpRequestResponse): HttpRequestRespo
     return fixedRequestResponse
 }
 
-// Moved over to BulkScan's built-in one
-//fun serverStatus(reqResp: HttpRequestResponse): String {
-//    if (!reqResp.hasResponse()) {
-//        return "TIMEOUT"
-//    }
-//
-//    val resp = reqResp.response()
-//
-//    val serverHeaderValue: String
-//    if (resp.hasHeader("Server")) {
-//        serverHeaderValue = resp.headerValue("Server")
-//    } else {
-//        serverHeaderValue = ""
-//    }
-//    if (resp.statusCode() == "0".toShort()) {
-//        return resp.statusCode().toString()
-//    } else {
-//        return serverHeaderValue + resp.statusCode().toString() // E.g. nginx505
-//    }
-//    // serverStatus() = "0" if no sheader or status code or it'll just be 404 if no sheader or just nginx0 if server header but no status code
-//}
-
 fun confirmedVulnerable(probeReqResp: MontoyaRequestResponse, technique: String): Boolean {
     //Filter out ones that will break.... robots.txt?anything will of course work so...
     if (technique in listOf("robots", "sitemap", "favicon")) {
