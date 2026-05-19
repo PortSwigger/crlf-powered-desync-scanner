@@ -37,7 +37,6 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
         RespHeaderInjectionScan("Response Header Injection probe")
 
 
-
         BulkUtilities.out("Loaded " + name + " v" + version);
     }
 

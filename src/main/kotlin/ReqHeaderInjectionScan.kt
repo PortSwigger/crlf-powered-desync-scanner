@@ -156,10 +156,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 val sendProbeRequest = {
                     probeRequestResponse = request(probe.probeRequest, forceHP1)
 
-                    !(responseHasErrors(probeRequestResponse) && !technique.contains(
-                        "timeout",
-                        true
-                    )) //If it's an expected timeout, don't check for errors
+                    !(responseHasErrors(probeRequestResponse) && !probe.expectedResponseMatches.contains("TIMEOUT")) //If it's an expected timeout, don't check for errors
                     //indicate failure
                 }
 
@@ -240,7 +237,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 //Needs updating i think... should maybe still proove that we got a different response... :thinking:
                 var numberOfMatches = 0
 
-                if (!technique.contains("timeout", true)) {
+                if (!probe.expectedResponseMatches.contains("TIMEOUT")) {
                     probe.expectedResponseMatches.forEach {
                         match ->
                             if (match == "NO_HEADERS") {
