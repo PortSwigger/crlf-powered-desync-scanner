@@ -18,7 +18,7 @@ repositories {
 
 dependencies {
     implementation(kotlin("stdlib"))
-    implementation("net.portswigger.burp.extensions:montoya-api:+")
+    compileOnly("net.portswigger.burp.extensions:montoya-api:2026.4")
     implementation(files("bulkScan-all.jar"))
 }
 
