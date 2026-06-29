@@ -39,12 +39,12 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
 
         BulkUtilities.out("Loaded " + name + " v" + version);
         BulkUtilities.out("""
-            ┌─────────┐
-            │ ↵ ENTER │
-            └──┐      │
-               │      │
-               │      │
-               └──────┘
+            ┌────────┐
+            │↵ ENTER │
+            └──┐     │
+               │     │
+               │     │
+               └─────┘
         """.trimIndent())
     }
 
