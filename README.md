@@ -1,4 +1,4 @@
-# HTTP Request Header Injector
+# CRLF-Powered Desync Scanner
 This is the Burp Extension I used to detect all cases in my research [CRLF-Powered Desync Attacks: Beheading HTTP Streams](https://blackhat.com/us-26/briefings/schedule/index.html#crlf-powered-desync-attacks-beheading-http-streams-51712).
 
 It's research scanner built using [BulkScan](https://github.com/albinowax/bulkScan) similar to  [HTTP Request Smuggler](https://github.com/PortSwigger/http-request-smuggler) and others.
@@ -13,4 +13,4 @@ There is a `WAFChecker` which uses static strings to try and reduce FPs from WAF
 Additionally, there is an "auto-exploit via Response Queue Poisoning" button that may or may not work...
 
 ### Response Header Injection probe
-Injects a random header and looks for that header in the response. 
+Injects a random header and looks for that header in the response headers. 
