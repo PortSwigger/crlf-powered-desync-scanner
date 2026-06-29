@@ -38,6 +38,14 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
 
 
         BulkUtilities.out("Loaded " + name + " v" + version);
+        BulkUtilities.out("""
+            ┌─────────┐
+            │ ↵ ENTER │
+            └──┐      │
+               │      │
+               │      │
+               └──────┘
+        """.trimIndent())
     }
 
     //ON unload, kill everything in the queue!
