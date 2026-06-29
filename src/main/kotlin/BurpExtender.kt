@@ -11,7 +11,7 @@ class BurpExtender: BurpExtension, IExtensionStateListener, IBurpExtender {
         internal val configSettings = SettingsBox()
     }
 
-    val name: String = "HTTP Header Injector"
+    val name: String = "CRLF-Powered Desync Scanner"
     private val version = "1.0"
     var unloaded: Boolean = false
     val hostsToSkip: ConcurrentHashMap<String, Boolean> = BulkScan.hostsToSkip

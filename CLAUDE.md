@@ -1,4 +1,4 @@
-# GEMINI.md
+# CLAUDE.md
 This is a Burp Suite Extension using the Montoya API. The extensions purpose is to detect HTTP header injection vulnerabilities via CRLF injections.
 
 ## Architecture
