@@ -104,13 +104,6 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
             var baseRequest: HttpRequest
 
-            //Add OPTIONAL cache buster...
-            if (Utilities.globalSettings.getBoolean("Add cache buster")) {
-                baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
-            } else {
-                baseRequest = Utilities.buildMontoyaResp(request(service, baseReq)).request()
-            }
-
             var currentStatusDiff = ""
             var previousStatusDiff = ""
 
@@ -119,11 +112,6 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
             lateinit var benignRequestResponse: MontoyaRequestResponse
             lateinit var probeRequestResponse: MontoyaRequestResponse
-
-            //Override method if we want...
-            if (Utilities.globalSettings.getBoolean("Enable method override")) {
-                baseRequest = baseRequest.withMethod(Utilities.globalSettings.getString("method override"))
-            }
 
             // for (permutation in permutations) {} //As per the PDS from http1mustdie...
             for (technique in enabledMutations) {
@@ -136,10 +124,19 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                     break
                 }
 
-                //TODO cache buster should be added here... / updated on every request
+                //Add OPTIONAL cache buster...
+                if (Utilities.globalSettings.getBoolean("Add cache buster")) {
+                    baseRequest = Utilities.buildMontoyaResp(request(service, Utilities.addCacheBuster(baseReq, Utilities.generateCanary()))).request()
+                } else {
+                    baseRequest = Utilities.buildMontoyaResp(request(service, baseReq)).request()
+                }
+
+                //Override method if we want...
+                if (Utilities.globalSettings.getBoolean("Enable method override")) {
+                    baseRequest = baseRequest.withMethod(Utilities.globalSettings.getString("method override"))
+                }
 
                 val probe = mutator.getProbe(baseRequest, technique)
-
 
                 //Check each probe 5 times for consistency...
                 for (i in 1..Utilities.globalSettings.getInt("confirmations")) {
@@ -259,8 +256,6 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                         }
                         if (numberOfMatches != 0 && numberOfMatches == probe.expectedResponseMatches.size) { //If we got a match on every entry one of the expected response matches.
 
-                            // todo Validate this further by removing the parts that should actually make this work...
-                            // todo launch an optional attack for quickly check for desync via RQP or similar? :thinking:
                             if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
                                 // Follow up no enabled, skip
                                 continue
@@ -322,7 +317,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                         continue
                     }
 
-                    // todo Validate this further by removing the parts that should actually make this work...
+
                     if (!Utilities.globalSettings.getBoolean("Enable follow up")) {
                         // Follow up no enabled, skip
                         continue
@@ -469,30 +464,4 @@ fun confirmedVulnerable(probeReqResp: MontoyaRequestResponse, technique: String)
         Utilities.err(e.message)
         return false
     }
-
-
-    //TODO these techniques were not very good... Great at filtering out FP, but really bad a filtering out TP also
-//    // Remove HTTP/1.1%0d%0a
-//    val noProbePath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}%0d%0a"), "") //remove CLRF to ensure it's not any other part of the payload that triggers interesting behaviour
-//    val confirmReq = probeReqResp.request().withPath(noProbePath)
-//
-//    val confirmReqResp = Utilities.montoyaApi.http().sendRequest(confirmReq)
-//
-//    if (serverStatus(confirmReqResp) == serverStatus(probeReqResp)) {
-//        //With removed CLRF injections... this should no way have made the same response...
-//        return false
-//    }
-//
-//    // Remove only HTTP/1.1
-//    val noHttpPath = probeReqResp.request().pathWithoutQuery().replace(Regex("HTT[P,X]/[0-9]{1,2}\\.[0-9]{1,2}"), "") // remove anything except %0d%0a
-//    val confirmReqNoHttp = probeReqResp.request().withPath((noHttpPath))
-//
-//    val confirmReqRespNoHttp = Utilities.montoyaApi.http().sendRequest(confirmReqNoHttp)
-//
-//    if (serverStatus(confirmReqRespNoHttp) == serverStatus(probeReqResp)) {
-//        // If still the same then probably a WAF or FP
-//        return false
-//    }
-    // If they still differ, good, time to report
-    // Could follow up further here...Perhaps remove only HTTP/X.X to see if it is the %0d%0a that causes the issue... would work on most WAFs too since if %0d%0aHeader:%20value is the same response... it was likely WAF
 }

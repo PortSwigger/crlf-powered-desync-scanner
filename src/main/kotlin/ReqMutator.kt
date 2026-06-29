@@ -22,17 +22,16 @@ class ReqMutator internal constructor() {
         protocolBasedMutations.register("HvsX", true, "/%20X vs /%20H")
         protocolBasedMutations.register("HTTP/13.37", true, "/%20HTTP/1.1%0D%0AX:%20x vs /%20HTTP/13.37%0D%0AX:%20x")
         protocolBasedMutations.register("http/0.9", true, "")
-        protocolBasedMutations.register("http/null", false, "")
+        //protocolBasedMutations.register("http/null", false, "")
         protocolBasedMutations.register("split", true, "End request without host header")
         //protocolBasedMutations.register("basic...", false, "Doesn't work")
         protocolBasedMutations.register("httx", true, "")
         protocolBasedMutations.register("tunnel", true, "")
         protocolBasedMutations.register("expect-tunnel", true, "") //Worked on target's we already knew about. still cool
-        //protocolBasedMutations.register("expect-range-tunnel", true) //TODO Is this worth implementing?
         //protocolBasedMutations.register("http/1.0", true, "") //Failed terribly
         //protocolBasedMutations.register("HTTP/13.37 - akamai", true, "") //Fails
         //protocolBasedMutations.register("HTTP//13.37", true, "") //Failed
-        protocolBasedMutations.register("split0.9", false, "")
+        //protocolBasedMutations.register("split0.9", false, "")
         protocolBasedMutations.register("javaHTTP/13.37",true, "")
         protocolBasedMutations.register("bareLF", true, "Bare LF (no CR) injection with HTTP/13.37 -> 505")
         protocolBasedMutations.register("bareCR", true, "Bare CR (no LF) injection with HTTP/13.37 -> 505")
@@ -52,7 +51,6 @@ class ReqMutator internal constructor() {
         headerBasedMutations.register("range-invalid", true,"")
         headerBasedMutations.register("max-forwardsTimeout", true,"")
         headerBasedMutations.register("ifMatch", true, "")
-        headerBasedMutations.register("responseHeaderInjection", false, "") //very FP prone
         headerBasedMutations.register("clNoHost", true, "")
         headerBasedMutations.register("teUserAgentTimeout", true, "")
         headerBasedMutations.register("headerSpace", true, "")
@@ -70,7 +68,7 @@ class ReqMutator internal constructor() {
             headerBasedMutations.register("max-forwardsTrace$i", true, "")
             headerBasedMutations.register("max-forwardsOptions$i", true, "")
         }
-        headerBasedMutations.register("badHeaderName", false, "")
+        //headerBasedMutations.register("badHeaderName", false, "")
         headerBasedMutations.register("clinvalid", true, "")
         headerBasedMutations.register("accept", true, "")
         headerBasedMutations.register("headerTab", true, "")
@@ -102,8 +100,6 @@ class ReqMutator internal constructor() {
         //Smuggle based mutations?
         smuggleBasedMutations.register("CL.TE-body-timeout", true, "Inspired by CL.TE detection")
         smuggleBasedMutations.register("TE.CL-body-timeout", true, "Inspired by TE.CL detection")
-
-        //TODO /%20HTTP/1.1%0d%0aX:%20x vs /%252e%252e%252f%20HTTP/1.1%0d%0aX:%20x
 
 
 
@@ -345,7 +341,6 @@ class ReqMutator internal constructor() {
                 payload.probeRequest = baseRequest.withPath("/$basePath%20HTTP/1.1%0d%0a%43onnection:%20Host%0d%0aX:%20x")
                 payload.expectedResponseMatches = listOf("400 Bad Request")
             }
-            //TODO Should we NOT smuggle the max forwards header... and stead just see if adding max fowards breaks things?
             "max-forwardsTrace"+technique[technique.length - 1] -> {
                 val maxForwardsValue = technique[technique.length - 1]
                 val canary = Utilities.montoyaApi.utilities().randomUtils().randomString(8)
