@@ -289,7 +289,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                             report("Request Header Injection via $technique",
                                 """
-                                The application behaves in a manner that is consistent with Request Header Injection.
+                                The application behaves in a manner that is consistent with Request Header Injection.<br>
                                 Please read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information. 
                                 """,
                                 baseReq,
@@ -345,7 +345,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                     report(
                         "Request Header Injection via $technique - Dodgy", """
-                        The application behaves in a manner that is somewhat consistent with Request Header Injection.
+                        The application behaves in a manner that is somewhat consistent with Request Header Injection.<br>
                         Please read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information.
                         """, baseReq, benignRequestResponse, probeRequestResponse
                     )
@@ -404,7 +404,7 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
                 val currentServerStatus = attackRequestResponse.serverStatus().toString()
 
                 if (previousServerStatus != currentServerStatus) {
-                    reportToOrganiser("RQP!?!?!?!\r\n$previousServerStatus|$currentServerStatus", attackRequestResponse)
+                    reportToOrganiser("RQP!?!?!?!\r\n\$previousServerStatus|$currentServerStatus", attackRequestResponse)
                     return true
                 }
             }

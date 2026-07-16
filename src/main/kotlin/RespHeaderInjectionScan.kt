@@ -54,7 +54,7 @@ internal class RespHeaderInjectionScan(name: String?) : Scan(name) {
 
             if (splitRequestResponse.timedOut() || (checkRequestResponse.serverStatus() != splitRequestResponse.serverStatus())) {
                 name += ": Splitting?"
-                description = "The application behaves in a manner that is consistent with Response Header Injection and it may be possible to split the response using length headers.\r\nPlease read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information."
+                description = "The application behaves in a manner that is consistent with Response Header Injection and it may be possible to split the response using length headers.<br>Please read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information."
                 addSplit = true
             }
 
