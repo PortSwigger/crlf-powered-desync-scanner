@@ -17,7 +17,7 @@ internal class RespHeaderInjectionScan(name: String?) : Scan(name) {
         try {
             // Finding Data
             var name = "Response Header Injection"
-            var description = "Response Header Injection"
+            var description = "The application behaves in a manner that is consistent with Response Header Injection.\r\nPlease read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information."
 
             val original: ByteArray
             if (Utilities.isHTTP2(baseReq)) {
@@ -54,7 +54,7 @@ internal class RespHeaderInjectionScan(name: String?) : Scan(name) {
 
             if (splitRequestResponse.timedOut() || (checkRequestResponse.serverStatus() != splitRequestResponse.serverStatus())) {
                 name += ": Splitting?"
-                description = "Response Header Injection with interesting response to length headers"
+                description = "The application behaves in a manner that is consistent with Response Header Injection and it may be possible to split the response using length headers.\r\nPlease read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information."
                 addSplit = true
             }
 

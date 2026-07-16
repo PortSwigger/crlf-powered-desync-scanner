@@ -289,7 +289,8 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                             report("Request Header Injection via $technique",
                                 """
-                                The application behaves in a manner that is consistent with Request Header Injection...
+                                The application behaves in a manner that is consistent with Request Header Injection.
+                                Please read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information. 
                                 """,
                                 baseReq,
                                 benignRequestResponse,
@@ -344,7 +345,8 @@ internal class ReqHeaderInjectionScan(name: String?) : Scan(name) {
 
                     report(
                         "Request Header Injection via $technique - Dodgy", """
-                        The application behaves in a manner that is consistent with Request Header Injection...Sort of
+                        The application behaves in a manner that is somewhat consistent with Request Header Injection.
+                        Please read <a href='https://portswigger.net/research/crlf-powered-desync-attacks'>https://portswigger.net/research/crlf-powered-desync-attacks</a> for more information.
                         """, baseReq, benignRequestResponse, probeRequestResponse
                     )
 
