@@ -1,7 +1,7 @@
 # CRLF-Powered Desync Scanner
-This is the Burp Extension we used to detect all cases our my research [CRLF-Powered Desync Attacks: Beheading HTTP Streams](https://portswigger.net/research/crlf-powered-desync-attacks).
+This is the Burp Extension we used to detect all cases from our research [CRLF-Powered Desync Attacks: Beheading HTTP Streams](https://portswigger.net/research/crlf-powered-desync-attacks).
 
-It's a research-first scanner built using [BulkScan](https://github.com/albinowax/bulkScan) similar to  [HTTP Request Smuggler](https://github.com/PortSwigger/http-request-smuggler) and others.
+It's a research-first scanner built using [BulkScan](https://github.com/albinowax/bulkScan) similar to [HTTP Request Smuggler](https://github.com/PortSwigger/http-request-smuggler) and others.
 
 # Implementation
 ### Request Header Injection probe
