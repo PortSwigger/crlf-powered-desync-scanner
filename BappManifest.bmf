@@ -1,0 +1,13 @@
+Uuid: dcdb347f593040a1b8c11f4e7aa2816f
+ExtensionType: 1
+Name: CRLF-Powered Desync Scanner
+RepoName: crlf-powered-desync-scanner
+ScreenVersion: 1.0.0
+SerialVersion: 3
+MinPlatformVersion: 30
+ProOnly: False
+Author: Tom Stacey, PortSwigger
+ShortDescription: Detects header injections for CRLF-powered desyncs.
+EntryPoint: crlf-powered-desync-scanner-1.0.0.jar
+BuildCommand: ./gradlew build
+SupportedProducts: Pro, Community

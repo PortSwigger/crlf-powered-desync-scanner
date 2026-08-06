@@ -1,0 +1,20 @@
+<p>
+CRLF-Powered Desync Scanner detects HTTP request and response header injection vulnerabilities that arise when a front-end proxy forwards CRLF sequences into the request line or headers, allowing an attacker to inject their own headers, split requests, or desynchronize the connection. It
+ is the research scanner behind the presentation "CRLF-Powered Desync Attacks: Beheading HTTP Streams".
+</p>
+
+<h2>Features</h2>
+<ul>
+	<li>Tests a broad set of request-line and header mutations: protocol-version confusion, duplicate and malformed <code class="InlineCode">Host</code> headers, <code class="InlineCode">Transfer-Encoding</code>/<code class="InlineCode">Content-Length</code> desync, request smuggling, and tunnelling.</li>
+	<li>Detects response header injection via a reflected canary header, flagging cases that react to smuggled length headers as potential response splitting.</li>
+	<li>Confirms findings before reporting by repeating probes and running a follow-up, separating firm matches from lower-confidence diff-only results.</li>
+	<li>Filters common WAF block pages and server signatures to cut false positives.</li>
+	<li>Applies optional URL-encoding and a cache buster to slip probes past normalising intermediaries.</li>
+</ul>
+
+<h2>Usage</h2>
+<ol>
+	<li>Right-click one or more requests in Burp and launch the scan from the context menu.</li>
+	<li>Enable the techniques you want and tune options such as follow-up confirmation, encoding, and cache busting.</li>
+	<li>Review reported issues, treating entries marked <code class="InlineCode">Dodgy</code> as diff-based results needing manual confirmation.</li>
+</ol>
